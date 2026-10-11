@@ -2,6 +2,7 @@
 const { app, BrowserWindow, WebContentsView, ipcMain, shell, nativeTheme, session, dialog } = require('electron');
 const minecraft = require('./minecraft');
 const archipelago = require('./archipelago');
+const background = require('./background');
 const path = require('path');
 const fs = require('fs');
 
@@ -49,7 +50,7 @@ function createWindow() {
   });
   if (b.max) win.maximize();
   win.loadFile(path.join(__dirname, 'shell.html'));
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => { if (!process.argv.includes('--versteckt')) win.show(); });  // Autostart: nur ins Symbol unten rechts
 
   view = new WebContentsView({
     webPreferences: { preload: path.join(__dirname, 'site-preload.js'), partition: 'persist:hvik',
@@ -92,6 +93,9 @@ ipcMain.on('nav-cmd', (e, cmd) => {
   else if (cmd === 'reload') wc.reload();
   else if (cmd === 'home') wc.loadURL(SITE);
   else if (cmd === 'notes') wc.loadURL(SITE + '/app#patchnotes');
+  else if (cmd === 'settings') wc.loadURL(SITE + '/app/einstellungen');
+  else if (cmd === 'game-open') { const g = background.getRunning(); if (g && g.url) wc.loadURL(SITE + g.url); }
+  else if (cmd === 'game-clear') background.setRunning(null);
   else if (cmd === 'retry') { win.webContents.send('loading'); wc.loadURL(SITE); }
   else if (cmd === 'update-install') autoUpdater.quitAndInstall(true, true);
 });
@@ -187,12 +191,15 @@ ipcMain.handle('mc-play', async (e, code) => {
   if (!fromSite(e)) return null;
   if (playing) return { ok: false, message: 'Läuft schon …' };
   playing = true;
-  const say = text => { try { e.sender.send('mc-progress', text); } catch { /* Seite gewechselt */ } };
+  const say = text => { background.note('minecraft', text); try { e.sender.send('mc-progress', text); } catch { /* Seite gewechselt */ } };
   try {
     say('Hole die Lobby-Daten …');
     const info = await lobbyInfo(code);
-    return { ok: true, ...(await minecraft.play(info, { say, get: u => siteGet(u, false), settings: loadSettings() })) };
+    const r = await minecraft.play(info, { say, get: u => siteGet(u, false), settings: loadSettings() });
+    background.setRunning({ label: 'Minecraft (HviK Link)', icon: '⛏️', url: `/games/minecraft/${encodeURIComponent(code)}` });
+    return { ok: true, ...r };
   } catch (err) {
+    background.note('fehler', 'Minecraft: ' + err.message);
     return { ok: false, message: err.message, code: err.code || '' };
   } finally {
     playing = false;
@@ -238,7 +245,7 @@ ipcMain.handle('ap-play', async (e, rid, setupOnly, mode) => {
   if (!fromSite(e)) return null;
   if (apBusy) return { ok: false, message: 'Läuft schon …' };
   apBusy = true;
-  const say = text => { try { e.sender.send('ap-progress', text); } catch { /* Seite gewechselt */ } };
+  const say = text => { background.note('archipelago', text); try { e.sender.send('ap-progress', text); } catch { /* Seite gewechselt */ } };
   try {
     say('Hole die Runden-Daten …');
     const info = { ...(await roundInfo(rid)), setupOnly: !!setupOnly, mode: mode === 'server' ? 'server' : 'lokal' };
@@ -247,8 +254,11 @@ ipcMain.handle('ap-play', async (e, rid, setupOnly, mode) => {
                                                   filters: [{ name: title, extensions: ext }, { name: 'Alle Dateien', extensions: ['*'] }] });
       return r.canceled ? null : r.filePaths[0];
     };
-    return { ok: true, ...(await archipelago.play(info, { say, download, downloadNamed, pickFile, settings: loadSettings() })) };
+    const r = await archipelago.play(info, { say, download, downloadNamed, pickFile, settings: loadSettings() });
+    if (!r.setupOnly) background.setRunning({ label: info.game.name, icon: info.game.icon, url: `/events/archipelago/runde/${encodeURIComponent(rid)}#anleitung` });
+    return { ok: true, ...r };
   } catch (err) {
+    background.note('fehler', 'Archipelago: ' + err.message);
     return { ok: false, message: err.message };
   } finally {
     apBusy = false;
@@ -265,10 +275,40 @@ ipcMain.handle('ap-open-folder', async (e, folder) => {
   return shell.openPath(target);
 });
 
+// ---------- Einstellungen + Fehler melden (Seite /app/einstellungen) ----------
+ipcMain.handle('app-settings', async (e, patch) => {
+  if (!fromSite(e)) return null;
+  if (patch && typeof patch === 'object') {
+    const allowed = {};
+    for (const k of ['autostart', 'tray']) if (k in patch) allowed[k] = !!patch[k];
+    if (patch.notify && typeof patch.notify === 'object')
+      allowed.notify = { ...background.settings().notify, ...Object.fromEntries(Object.entries(patch.notify).map(([k, v]) => [k, !!v])) };
+    saveSettings({ ...loadSettings(), ...allowed });
+    background.applyAutostart();
+  }
+  return { ...background.settings(), cfRoot: loadSettings().cfRoot || null, apRoot: archipelago.ROOT };
+});
+ipcMain.handle('app-diag', async e => (fromSite(e) ? background.diag() : null));
+ipcMain.handle('app-test-notify', async e => {
+  if (fromSite(e)) background.notify('🔔 So sehen Benachrichtigungen aus', 'Ein Klick drauf bringt dich zur passenden Seite.', '/app/einstellungen');
+});
+ipcMain.handle('app-open', async (e, which) => {
+  if (!fromSite(e)) return null;
+  const dir = which === 'roms' ? path.join(archipelago.ROOT, 'ROMs') : archipelago.ROOT;
+  fs.mkdirSync(dir, { recursive: true });
+  return shell.openPath(dir);
+});
+
 app.on('second-instance', () => {
   if (!win) return;
+  if (!win.isVisible()) win.show();
   if (win.isMinimized()) win.restore();
   win.focus();
 });
-app.whenReady().then(() => { createWindow(); setupUpdates(); });
+app.whenReady().then(() => {
+  createWindow();
+  setupUpdates();
+  background.start({ win, view, site: SITE, loadSettings, saveSettings, fetchJson: u => siteGet(u, true) });
+  win.webContents.on('did-finish-load', () => win.webContents.send('game', background.getRunning()));
+});
 app.on('window-all-closed', () => app.quit());

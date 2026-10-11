@@ -21,6 +21,9 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-famil
 .upd:hover{background:#2e7d32;color:#fff;}
 .upd.busy{cursor:default;border-color:#3a4150;background:transparent;color:var(--dim);}
 .notes{-webkit-app-region:no-drag;border:0;background:transparent;color:var(--dim);font-size:12px;font-weight:700;padding:5px 10px;border-radius:7px;cursor:pointer;}
+.game{-webkit-app-region:no-drag;border:1px solid #2e7d32;background:rgba(46,125,50,.16);color:#cfe9d0;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis;}
+.game:hover{background:#2e7d32;color:#fff;}
+.game-x{-webkit-app-region:no-drag;border:0;background:transparent;color:var(--dim);cursor:pointer;font-size:11px;padding:4px;margin-left:-4px;}
 .notes:hover{background:#1a1e26;color:var(--text);}
 .prog{position:fixed;top:39px;left:0;height:2px;width:0;background:var(--accent);transition:width .4s ease,opacity .3s;opacity:0;}
 .prog.on{opacity:1;width:70%;transition:width 6s cubic-bezier(.1,.6,.2,1);}
@@ -47,7 +50,9 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-famil
     <button id="b-reload" title="Neu laden">⟳</button>
     <button id="b-home" title="Startseite">⌂</button>
   </div>
+  <button class="game" id="b-game" hidden title="Anleitung zum laufenden Spiel öffnen"></button><button class="game-x" id="b-game-x" hidden title="Ausblenden">✕</button>
   <button class="notes" id="b-notes" title="Patchnotes – was ist neu?">📜 Patchnotes</button>
+  <button class="notes" id="b-settings" title="Einstellungen &amp; Fehler melden">⚙️</button>
   <div class="title" id="title"></div>
   <button class="upd" id="upd" hidden></button>
 </div>
@@ -61,7 +66,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-famil
 </div>
 <script>
 const $ = id => document.getElementById(id);
-for (const [id, c] of [['b-back', 'back'], ['b-fwd', 'forward'], ['b-reload', 'reload'], ['b-home', 'home'], ['b-retry', 'retry'], ['b-notes', 'notes']])
+for (const [id, c] of [['b-back', 'back'], ['b-fwd', 'forward'], ['b-reload', 'reload'], ['b-home', 'home'], ['b-retry', 'retry'], ['b-notes', 'notes'], ['b-settings', 'settings'], ['b-game', 'game-open'], ['b-game-x', 'game-clear']])
   $(id).addEventListener('click', () => shellApi.cmd(c));
 const prog = $('prog');
 shellApi.on('nav', s => {
@@ -77,6 +82,11 @@ shellApi.on('update', u => {
   b.hidden = false;
   if (u.state === 'ready') { b.className = 'upd'; b.textContent = `✨ Update ${u.version} – Neu starten`; b.onclick = () => shellApi.cmd('update-install'); }
   else { b.className = 'upd busy'; b.textContent = `⬇ Update lädt … ${u.percent || 0} %`; b.onclick = null; }
+});
+shellApi.on('game', g => {
+  const b = $('b-game'), x = $('b-game-x');
+  b.hidden = x.hidden = !g;
+  if (g) b.textContent = `${g.icon || '🎮'} ${g.label} läuft · 📋 Anleitung`;
 });
 shellApi.on('ready', () => $('splash').className = 'splash hide');
 shellApi.on('loading', () => $('splash').className = 'splash');
