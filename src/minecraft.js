@@ -142,6 +142,75 @@ async function ensureMod(inst, info, ctx) {
   await fsp.writeFile(path.join(config, 'hviklink.json'), JSON.stringify(cfg, null, 2), 'utf8');
 }
 
+// ---------- CurseForge starten + auf das Profil warten (sonst sagt CurseForge beim Kaltstart "not found") ----------
+const CF_LOGS = path.join(process.env.APPDATA || '', 'CurseForge', 'logs');
+const CF_EXE = [path.join(process.env.LOCALAPPDATA || '', 'Programs', 'CurseForge Windows', 'CurseForge.exe'),
+                path.join(process.env.ProgramFiles || '', 'CurseForge Windows', 'CurseForge.exe')];
+
+/** Neueste CurseForge-Logdatei (full-*.log), die nach "since" angelegt wurde. */
+async function cfLog(since) {
+  try {
+    const dirs = (await fsp.readdir(CF_LOGS, { withFileTypes: true })).filter(d => d.isDirectory()).map(d => d.name).sort().reverse();
+    for (const d of dirs.slice(0, 8)) {
+      const dir = path.join(CF_LOGS, d);
+      const f = (await fsp.readdir(dir)).find(x => /^full-.*\.log$/.test(x));
+      if (!f) continue;
+      const file = path.join(dir, f), st = await fsp.stat(file);
+      if (st.birthtimeMs < since - 2000 && st.mtimeMs < since - 2000) return null;
+      // jeder Startbefehl öffnet kurz einen zweiten CurseForge-Prozess, der sofort wieder zugeht - dessen Log überspringen
+      if ((await fsp.readFile(file, 'utf8')).includes('Unable to obtain single instance lock')) continue;
+      return file;
+    }
+  } catch { /* kein Log */ }
+  return null;
+}
+
+/** Wartet, bis im CurseForge-Log eine Zeile (nach Position "from") auf das Muster passt. */
+async function waitLog(file, from, re, ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    try {
+      const txt = (await fsp.readFile(file)).subarray(from).toString('utf8');
+      const m = txt.match(re);
+      if (m) return m[0];
+    } catch { /* noch nicht da */ }
+    await sleep(500);
+  }
+  return null;
+}
+
+async function launch(guid, say) {
+  const uri = `curseforge://launch-game?instanceId=${guid}&gameId=432`;
+  const idRe = guid;  // nur Hex und Bindestriche - im Muster unkritisch
+  if (!(await cfRunning())) {  // Kaltstart: erst CurseForge öffnen und warten, bis es unser Profil kennt
+    const exe = CF_EXE.find(p => fs.existsSync(p));
+    const t0 = Date.now();
+    say('Starte CurseForge …');
+    if (exe) execFile(exe, [], { detached: true, windowsHide: false }).unref();
+    else await shell.openExternal('curseforge://');
+    let log = null;
+    for (let i = 0; i < 40 && !log; i++) { await sleep(500); log = await cfLog(t0); }
+    if (log) {
+      say('Warte, bis CurseForge das Profil geladen hat …');
+      await waitLog(log, 0, new RegExp(`Modpack ${idRe} detected|Scan complete.*${idRe}`), 45000);
+      await sleep(1500);
+    } else {
+      await sleep(8000);
+    }
+  }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const log = await cfLog(0);
+    const from = log ? (await fsp.stat(log)).size : 0;
+    await shell.openExternal(uri);
+    if (!log) return;
+    const r = await waitLog(log, from, new RegExp(`Modpack ${idRe} not found`), 6000);
+    if (!r) return;  // kein "not found" -> CurseForge startet das Spiel
+    say('CurseForge kennt das Profil noch nicht – versuche es gleich nochmal …');
+    await sleep(3000);
+  }
+  throw new Error('CurseForge findet das Profil nicht. Bitte in CurseForge einmal „Minecraft“ öffnen und dann nochmal ▶ Spielen.');
+}
+
 /** ▶ Spielen: einrichten/aktualisieren, dann das Profil über CurseForge starten. */
 async function play(info, ctx) {
   const { inst, created } = await ensureProfile(info, ctx);
@@ -149,7 +218,7 @@ async function play(info, ctx) {
   if (!inst.guid) throw new Error('Das Profil hat keine ID – bitte in CurseForge einmal öffnen und nochmal versuchen.');
   ctx.say(created ? 'Profil fertig – CurseForge startet Minecraft (beim ersten Mal lädt es noch Minecraft/Forge nach) …'
                   : (ctx.updated ? 'Mod aktualisiert – Minecraft startet …' : 'Alles aktuell – Minecraft startet …'));
-  await shell.openExternal(`curseforge://launch-game?instanceId=${inst.guid}&gameId=432`);
+  await launch(inst.guid, ctx.say);
   return { profile: inst.name, created, updated: !!ctx.updated };
 }
 
