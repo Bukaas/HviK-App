@@ -101,12 +101,38 @@ function setupUpdates() {
   if (!app.isPackaged) return;  // beim Entwickeln (npm start) nicht
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;  // spätestens beim nächsten Schließen
+  autoUpdater.on('update-available', i => win && win.webContents.send('update', { state: 'loading', percent: 0, version: i.version }));
   autoUpdater.on('download-progress', p => win && win.webContents.send('update', { state: 'loading', percent: Math.round(p.percent) }));
-  autoUpdater.on('update-downloaded', i => win && win.webContents.send('update', { state: 'ready', version: i.version }));
+  autoUpdater.on('update-downloaded', i => {
+    ready = i.version;
+    if (win) win.webContents.send('update', { state: 'ready', version: i.version });
+    askUpdate();
+  });
   autoUpdater.on('error', e => console.warn('Update:', e && e.message));
-  const check = () => autoUpdater.checkForUpdates().catch(() => {});
+  const check = () => { if (!ready) autoUpdater.checkForUpdates().catch(() => {}); else askUpdate(); };
   check();
-  setInterval(check, 2 * 60 * 60 * 1000);
+  setInterval(check, 30 * 60 * 1000);  // alle 30 Minuten - ist schon eins geladen, wird nochmal gefragt
+}
+
+// Update fertig geladen -> mitten im Bild fragen (im HviK-Look der Seite, sonst Windows-Dialog)
+let ready = null, asking = false, laterAt = 0;
+async function askUpdate() {
+  if (!ready || asking || !win || Date.now() - laterAt < 25 * 60 * 1000) return;
+  asking = true;
+  const text = `Version ${ready} der HviK-App ist da (du hast ${app.getVersion()}).\n\nJetzt neu starten und aktualisieren? Das dauert nur ein paar Sekunden.`;
+  let yes = null;
+  try {
+    yes = await view.webContents.executeJavaScript(
+      `typeof hvikConfirm === 'function' ? hvikConfirm(${JSON.stringify(text)}, {title: 'Update verfügbar', icon: '✨', ok: 'Jetzt aktualisieren', cancel: 'Später', danger: false}) : null`, true);
+  } catch { yes = null; }
+  if (yes === null) {  // Seite ohne HviK-Dialoge (z. B. offline) -> Windows-Fenster
+    const r = await dialog.showMessageBox(win, { type: 'info', title: 'Update verfügbar', message: `Version ${ready} der HviK-App ist da.`,
+      detail: 'Jetzt neu starten und aktualisieren?', buttons: ['Jetzt aktualisieren', 'Später'], defaultId: 0, cancelId: 1 });
+    yes = r.response === 0;
+  }
+  asking = false;
+  if (yes) autoUpdater.quitAndInstall(true, true);
+  else laterAt = Date.now();
 }
 
 // ---------- HviK Link (Minecraft) - nur für Seiten von hvik.org ----------
