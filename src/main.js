@@ -175,23 +175,26 @@ async function roundInfo(rid) {
 let apBusy = false;
 ipcMain.handle('ap-status', async (e, rid) => {
   if (!fromSite(e)) return null;
-  try { return { ok: true, ...(await archipelago.status(await roundInfo(rid))) }; }
+  try {
+    const info = await roundInfo(rid);
+    return { ok: true, ...(await archipelago.status(info)), game_server: info.game_server, server_state: info.server_state, server_possible: info.server_possible };
+  }
   catch (err) { return { ok: false, message: err.message }; }
 });
-ipcMain.handle('ap-play', async (e, rid, setupOnly) => {
+ipcMain.handle('ap-play', async (e, rid, setupOnly, mode) => {
   if (!fromSite(e)) return null;
   if (apBusy) return { ok: false, message: 'Läuft schon …' };
   apBusy = true;
   const say = text => { try { e.sender.send('ap-progress', text); } catch { /* Seite gewechselt */ } };
   try {
     say('Hole die Runden-Daten …');
-    const info = { ...(await roundInfo(rid)), setupOnly: !!setupOnly };
+    const info = { ...(await roundInfo(rid)), setupOnly: !!setupOnly, mode: mode === 'server' ? 'server' : 'lokal' };
     const pickFile = async (title, ext) => {
       const r = await dialog.showOpenDialog(win, { title, defaultPath: app.getPath('downloads'), properties: ['openFile'],
                                                   filters: [{ name: title, extensions: ext }, { name: 'Alle Dateien', extensions: ['*'] }] });
       return r.canceled ? null : r.filePaths[0];
     };
-    return { ok: true, ...(await archipelago.play(info, { say, download, downloadNamed, pickFile })) };
+    return { ok: true, ...(await archipelago.play(info, { say, download, downloadNamed, pickFile, settings: loadSettings() })) };
   } catch (err) {
     return { ok: false, message: err.message };
   } finally {

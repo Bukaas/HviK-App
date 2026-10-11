@@ -6,6 +6,7 @@ const path = require('path');
 const os = require('os');
 const { execFile, spawn } = require('child_process');
 const AdmZip = require('adm-zip');
+const mcap = require('./mcap');
 
 const ROOT = path.join(os.homedir(), 'HviK Archipelago');   // der "Archi-Spiele-Ordner"
 const ROMS = path.join(ROOT, 'ROMs');
@@ -191,6 +192,19 @@ async function start(pkg, info, ctx) {
   await runConsole(pkg.dir, `HviK Archipelago - ${info.game.name}`, ['call START.bat'], false);
 }
 
+/** Minecraft: eigene Welt = Archipelago-Server auf dem eigenen PC (Archipelago-Client) - oder der zugeteilte HviK-Server.
+ *  Gespielt wird mit dem CurseForge-Profil mit Shadern, der Server steht schon in der Serverliste. */
+async function playMinecraft(pkg, info, ctx) {
+  if (info.mode === 'server') {
+    if (!info.game_server) throw new Error('Dir ist noch kein Server zugeteilt – erst „Server anfragen“, ein Admin bestätigt dann.');
+    return mcap.play({ name: 'HviK Archipelago – Server', ip: info.game_server }, ctx);
+  }
+  ctx.say('Starte deinen Archipelago-Minecraft-Server (Fenster offen lassen, beim ersten Mal alles mit JA bestätigen) …');
+  await start(pkg, info, ctx);
+  const r = await mcap.play({ name: 'HviK Archipelago (dein PC)', ip: 'localhost' }, ctx);
+  return { ...r, hint: 'Warte im Server-Fenster auf „Server Running“, dann in Minecraft: Mehrspieler → „HviK Archipelago (dein PC)“ → im Chat Strg+V (connect) und /start.' };
+}
+
 /** ▶ Spielen (Runde läuft) bzw. ⚙️ Einrichten (Runde noch in der Lobby). */
 async function play(info, ctx) {
   if (!info.starter) throw new Error(`Für ${info.game.name} gibt es noch kein Starterpaket – bitte die Anleitung auf hvik.org nehmen.`);
@@ -201,6 +215,7 @@ async function play(info, ctx) {
   await setup(pkg, info, ctx);
   await ensureRom(info, ctx);
   if (info.setupOnly) return { folder: pkg.dir, setupOnly: true };
+  if (info.game.slug === 'minecraft') return { folder: pkg.dir, ...(await playMinecraft(pkg, info, ctx)) };
   await start(pkg, info, ctx);
   return { folder: pkg.dir };
 }

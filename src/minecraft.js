@@ -233,4 +233,4 @@ async function status(info, settings) {
   return { profile: inst ? inst.name : null, root: true };
 }
 
-module.exports = { play, status };
+module.exports = { play, status, instanceRoots, readInstances, closeCurseForge, launch };
