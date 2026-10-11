@@ -490,7 +490,7 @@ const STARTERS = {
     }
     return { guide: { title: 'Super Mario 64 – einmal das Spiel bauen', steps: [
       { text: 'Du brauchst eine eigene Super Mario 64 ROM: USA oder Japan als .z64 (EU geht nicht).' },
-      { text: 'Die Werkzeuge (MSYS2 in C:\msys64) hat die App schon installiert. Im SM64AP-Launcher: „Requirements and Debugging“ → „Check requirements“ → bei der Frage nach automatischer Installation „Ja“ und warten.' },
+      { text: 'Die Werkzeuge (MSYS2 in C:\\msys64) hat die App schon installiert. Im SM64AP-Launcher: „Requirements and Debugging“ → „Check requirements“ → bei der Frage nach automatischer Installation „Ja“ und warten.' },
       { text: 'Im selben Fenster „Register SM64 Rom“ → deine ROM wählen.' },
       { text: '„Compile default SM64AP build“ → Browse → einen Ordner OHNE Leerzeichen, z. B.:', copy: 'C:\\SM64AP' },
       { text: 'Einen Namen eingeben → „Download Files“ → „Create Build“. Beim ersten Mal dauert das 10–30 Minuten.' },
