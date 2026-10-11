@@ -122,7 +122,10 @@ async function writeRound(dir, info, ctx) {
   const hv = path.join(dir, 'tools', 'hvik.ps1');
   if (exists(hv)) {
     const s = await fsp.readFile(hv, 'utf8');
-    const t = s.replace(/^(\s*ApDir\s*=\s*)"[^"]*"/m, (m, a) => `${a}"${AP_DIR.replace(/"/g, '')}"`);
+    const t = s.replace(/^(\s*ApDir\s*=\s*)"[^"]*"/m, (m, a) => `${a}"${AP_DIR.replace(/"/g, '')}"`)
+      // Spielordner, den die App gefunden hat, vor der eigenen Steam-Suche nehmen
+      .replace(/(function Find-SteamGame\(\[int\]\$AppId\) \{\r?\n)(?!\s*if \(\$env:HVIK_GAME_DIR)/,
+               (m, a) => a + '    if ($env:HVIK_GAME_DIR -and (Test-Path $env:HVIK_GAME_DIR)) { return $env:HVIK_GAME_DIR }\r\n');
     if (t !== s) await fsp.writeFile(hv, t);
   }
   await fsp.writeFile(path.join(dir, 'name.txt'), info.slot);
@@ -210,9 +213,51 @@ function runConsole(dir, title, inner, wait) {
 
 // Einrichten ohne Fenster: Skripte ohne Rückfragen laufen unsichtbar, SMW macht die App selbst
 const SILENT_SETUP = new Set(['minecraft', 'the-binding-of-isaac']);
-function runHidden(dir, script) {
+function runHidden(dir, script, env) {
   return new Promise(res => execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script],
-    { cwd: dir, windowsHide: true, maxBuffer: 4 << 20 }, (err, out, errOut) => res({ code: err ? (err.code || 1) : 0, out: String(out || '') + String(errOut || '') })));
+    { cwd: dir, windowsHide: true, maxBuffer: 4 << 20, env: { ...process.env, ...(env || {}) } },
+    (err, out, errOut) => res({ code: err ? (err.code || 1) : 0, out: String(out || '') + String(errOut || '') })));
+}
+
+/** Steam-Spiele, deren Ordner das Einrichten braucht */
+const STEAM_GAMES = { 'the-binding-of-isaac': { appId: 250900, exe: 'isaac-ng.exe', label: 'The Binding of Isaac' } };
+/** Spielordner finden: gemerkte Wahl → Windows-Programmliste ("Steam App …") → Steam-Bibliotheken → laufendes Spiel → selbst auswählen. */
+async function findSteamGame(g, pkg, ctx) {
+  const ok = d => d && exists(path.join(d, g.exe));
+  if (ok(pkg.mark.gameDir)) return pkg.mark.gameDir;
+  const r = await ps(`$ErrorActionPreference='SilentlyContinue';
+    foreach ($k in 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App ${g.appId}','HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App ${g.appId}') { 'DIR|' + (Get-ItemProperty $k).InstallLocation }
+    foreach ($k in 'HKCU:\\Software\\Valve\\Steam','HKLM:\\SOFTWARE\\WOW6432Node\\Valve\\Steam','HKLM:\\SOFTWARE\\Valve\\Steam') { $p = Get-ItemProperty $k; 'STEAM|' + $p.SteamPath; 'STEAM|' + $p.InstallPath }
+    Get-Process -Name ${psq(path.basename(g.exe, '.exe'))} | ForEach-Object { 'DIR|' + (Split-Path $_.Path -Parent) }`);
+  const dirs = [], steams = [];
+  for (const line of r.out.split(/\r?\n/)) {
+    const [k, v] = line.split('|');
+    if (v && v.trim()) (k === 'DIR' ? dirs : steams).push(v.trim());
+  }
+  for (const s of steams.concat(['C:\\Program Files (x86)\\Steam', 'C:\\Program Files\\Steam'])) {
+    const libs = [s];
+    try {
+      const vdf = await fsp.readFile(path.join(s, 'steamapps', 'libraryfolders.vdf'), 'utf8');
+      for (const m of vdf.matchAll(/"path"\s+"([^"]+)"/g)) libs.push(m[1].replace(/\\\\/g, '\\'));
+    } catch { /* keine Bibliotheksliste */ }
+    for (const lib of libs) {
+      try {
+        const acf = await fsp.readFile(path.join(lib, 'steamapps', `appmanifest_${g.appId}.acf`), 'utf8');
+        const m = /"installdir"\s+"([^"]+)"/.exec(acf);
+        if (m) dirs.push(path.join(lib, 'steamapps', 'common', m[1]));
+      } catch { /* nicht in dieser Bibliothek */ }
+    }
+  }
+  let dir = dirs.find(ok);
+  if (!dir && ctx.pickFile) {
+    ctx.say(`${g.label} nicht gefunden – bitte einmal ${g.exe} im Spielordner auswählen …`);
+    const f = await ctx.pickFile(`${g.label}: ${g.exe} auswählen`, ['exe']);
+    if (f && path.basename(f).toLowerCase() === g.exe.toLowerCase()) dir = path.dirname(f);
+  }
+  if (!dir) throw new Error(`${g.label} wurde nicht gefunden. Ist es über Steam installiert? Sonst beim nächsten ▶ Spielen ${g.exe} im Spielordner auswählen.`);
+  pkg.mark.gameDir = dir;
+  await fsp.writeFile(pkg.markFile, JSON.stringify(pkg.mark, null, 2));
+  return dir;
 }
 async function setupSmw(ctx) {
   if (!exists(path.join(AP_DIR, 'host.yaml'))) {  // Archipelago legt seine Einstellungen beim ersten Start an
@@ -230,7 +275,9 @@ async function setup(pkg, info, ctx) {
     ctx.say(`Richte ${info.game.name} einmalig ein …`);
     if (info.game.slug === 'super-mario-world') await setupSmw(ctx);
     else {
-      const r = await runHidden(pkg.dir, path.join(pkg.dir, 'tools', 'einrichten.ps1'));
+      const sg = STEAM_GAMES[info.game.slug];
+      const env = sg ? { HVIK_GAME_DIR: await findSteamGame(sg, pkg, ctx) } : {};  // die Skripte nehmen den Ordner dann direkt
+      const r = await runHidden(pkg.dir, path.join(pkg.dir, 'tools', 'einrichten.ps1'), env);
       if (r.code !== 0) {
         const why = r.out.split(/\r?\n/).filter(l => /\[!\]/.test(l)).map(l => l.replace(/^\s*\[!\]\s*/, '')).join(' ');
         throw new Error('Einrichten hat nicht geklappt: ' + (why || 'unbekannter Fehler') );
