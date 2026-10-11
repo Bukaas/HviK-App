@@ -340,7 +340,7 @@ ipcMain.handle('ap-play', async (e, rid, setupOnly, mode) => {
 });
 ipcMain.handle('ap-client', async (e, name) => {
   if (!fromSite(e)) return null;
-  try { await archipelago.apInfo(); archipelago.openClient(String(name)); return { ok: true }; } catch (err) { return { ok: false, message: err.message }; }
+  try { await archipelago.apInfo(); await archipelago.openClient(String(name)); return { ok: true }; } catch (err) { return { ok: false, message: err.message }; }
 });
 ipcMain.handle('ap-open-folder', async (e, folder) => {
   if (!fromSite(e)) return null;
@@ -380,6 +380,7 @@ ipcMain.handle('app-settings', async (e, patch) => {
   if (patch && typeof patch === 'object') {
     const allowed = {};
     for (const k of ['autostart', 'tray', 'discord', 'spielzeit']) if (k in patch) allowed[k] = !!patch[k];
+    if (['auto', 'immer', 'aus'].includes(patch.toastMode)) allowed.toastMode = patch.toastMode;
     if (patch.notify && typeof patch.notify === 'object')
       allowed.notify = { ...background.settings().notify, ...Object.fromEntries(Object.entries(patch.notify).map(([k, v]) => [k, !!v])) };
     saveSettings({ ...loadSettings(), ...allowed });

@@ -318,14 +318,47 @@ async function roundFile(dir, re) {
 const hostPort = s => String(s || '').replace(':', ' ');
 /** Archipelago-Clients, die die Seite über die Anleitung öffnen darf */
 const CLIENTS = ['KH2 Client', 'Isaac Client', 'SNI Client', 'Text Client'];
-const lastConn = {};  // Client -> {server, slot}: der Knopf in der Anleitung verbindet dann genauso direkt
-/** Client öffnen - mit conn gleich verbunden (der Launcher reicht alles nach "--" an den Client weiter) */
-function openClient(name, conn) {
+const lastConn = {};  // Client -> {server, slot}: auch der Knopf in der Anleitung füllt dann alles vor
+// Nur diese Clients nehmen "--connect/--name" über den Launcher an - KH2/Isaac stürzen mit Argumenten ab
+const ARGS_OK = new Set(['Text Client']);
+
+/** Adresse als "zuletzt benutzter Server" eintragen - jeder Archipelago-Client hat sie dann schon im Feld */
+async function setLastServer(server) {
+  const file = path.join(AP_DIR, '_persistent_storage.yaml');
+  let s = '';
+  try { s = await fsp.readFile(file, 'utf8'); } catch { /* gibt es noch nicht */ }
+  const line = `  last_server_address: ${server}`;
+  if (/^ {2}last_server_address:.*$/m.test(s)) s = s.replace(/^ {2}last_server_address:.*$/m, line);
+  else if (/^client:\s*$/m.test(s)) s = s.replace(/^client:\s*$/m, m => `${m}\n${line}`);
+  else s = `client:\n${line}\n` + s;
+  await fsp.writeFile(file, s);
+}
+
+/** Client öffnen: Adresse steht schon drin, der Name liegt in der Zwischenablage */
+async function openClient(name, conn) {
   if (!CLIENTS.includes(name)) throw new Error('Unbekannter Client.');
   if (conn && conn.server) lastConn[name] = conn;
   const c = lastConn[name];
   if (!exists(launcher())) throw new Error('Archipelago nicht gefunden – einmal ▶ Spielen drücken, dann richtet die App es ein.');
-  detached(launcher(), c ? [name, '--', '--connect', c.server, ...(c.slot ? ['--name', c.slot] : [])] : [name]);
+  if (c) {
+    await setLastServer(c.server).catch(() => { /* dann eben ohne Vorausfüllen */ });
+    try { if (c.slot) require('electron').clipboard.writeText(c.slot); } catch { /* ohne Zwischenablage */ }
+  }
+  detached(launcher(), c && ARGS_OK.has(name) ? [name, '--', '--connect', c.server, ...(c.slot ? ['--name', c.slot] : [])] : [name]);
+}
+
+// AP-Welten, die nicht in Archipelago eingebaut sind: bei jedem ▶ Spielen prüfen und notfalls neu laden
+const APWORLDS = {
+  'the-binding-of-isaac': { file: 'tboir.apworld', url: 'https://github.com/NaveTK/Archipelago/releases/download/v0.4.3/tboir.apworld' },
+};
+async function ensureApworld(info, ctx) {
+  const w = APWORLDS[info.game.slug];
+  if (!w) return;
+  const target = path.join(AP_DIR, 'custom_worlds', w.file);
+  if (exists(target) && fs.statSync(target).size > 1000) return;
+  ctx.say(`Lade die Archipelago-Welt für ${info.game.name} (${w.file}) …`);
+  await fsp.mkdir(path.dirname(target), { recursive: true });
+  await fsp.writeFile(target, await ctx.download(w.url));
 }
 
 const STARTERS = {
@@ -371,12 +404,12 @@ const STARTERS = {
   async 'the-binding-of-isaac'(pkg, info, ctx) {
     ctx.say('Starte The Binding of Isaac und den Isaac Client …');
     detached('cmd.exe', ['/c', 'start', '', 'steam://rungameid/250900'], pkg.dir);
-    openClient('Isaac Client', { server: info.server, slot: info.slot });
+    await openClient('Isaac Client', { server: info.server, slot: info.slot });
     return { guide: { title: 'The Binding of Isaac', steps: [
-      { text: 'Isaac startet über Steam, der Isaac Client geht auf und verbindet sich von selbst mit deiner Runde.' },
-      { text: 'Er fragt nach dem Speicherplatz (1–3): den Spielstand, den du in Isaac benutzt.' },
-      { text: 'Falls er doch nicht verbindet: oben ins Server-Feld einfügen → Connect:', copy: info.server },
-      { text: 'Und als Name:', copy: info.slot },
+      { text: 'Isaac startet über Steam, der Isaac Client geht auf – die Adresse steht oben schon drin. Einfach „Connect“ klicken.' },
+      { text: 'Fragt er nach deinem Namen: Strg+V und Enter (dein Name ist schon kopiert):', copy: info.slot },
+      { text: 'Dann fragt er nach dem Speicherplatz (1–3): den Spielstand, den du in Isaac benutzt.' },
+      { text: 'Steht oben doch eine andere Adresse: diese einfügen → Connect:', copy: info.server },
       { text: 'Im Spiel: Mods-Menü → „The Archipelago of Isaac“ muss an sein → neuen Run starten.' },
       { text: 'Client-Befehle: /savefile 1-3 (Speicherplatz wechseln), /resync (Items neu holen).' },
     ], clients: ['Isaac Client'] } };
@@ -388,15 +421,16 @@ const STARTERS = {
     if (!exists(mm)) throw new Error('Der OpenKH Mod Manager fehlt – das Einrichten ist nicht fertig geworden. Nochmal ▶ Spielen.');
     ctx.say('Öffne den OpenKH Mod Manager und den KH2 Client …');
     detached(mm, []);
-    openClient('KH2 Client', { server: info.server, slot: info.slot });  // verbindet sich gleich mit der Runde und wartet dann auf KH2
+    await openClient('KH2 Client', { server: info.server, slot: info.slot });  // Adresse vorausgefüllt, Name in der Zwischenablage
     return { guide: { title: 'Kingdom Hearts II', steps: [
       { text: 'Im OpenKH Mod Manager: grünes Plus → „Select and install Mod Archive“ → deine Seed-Datei wählen (Pfad zum Einfügen):', copy: seed },
       { text: 'Die Seed GANZ NACH OBEN schieben. Alte Seeds aus früheren Runden abhaken.' },
       { text: '„Mod Loader“ → „Build and Run“. KH2 startet. Neue Runde = NEUER Spielstand → du landest im Garden of Assemblage.' },
-      { text: 'Der KH2 Client ist schon offen und mit deiner Runde verbunden – sobald du im Garden of Assemblage bist, findet er das Spiel von selbst. Er muss die ganze Zeit offen bleiben.' },
-      { text: 'Client aus Versehen zu? Knopf unten öffnet ihn wieder, gleich verbunden. „Cannot Open Process“: den Client als Administrator starten.' },
-      { text: 'Falls er doch nicht verbindet: oben die Adresse eintragen → Connect:', copy: info.server },
-      { text: 'Und als Name:', copy: info.slot },
+      { text: 'Der KH2 Client ist schon offen, die Adresse steht oben drin: „Connect“ klicken.' },
+      { text: 'Fragt er nach deinem Namen: Strg+V und Enter (dein Name ist schon kopiert):', copy: info.slot },
+      { text: 'Sobald du im Garden of Assemblage bist, findet der Client das Spiel von selbst. Er muss die ganze Zeit offen bleiben.' },
+      { text: 'Client aus Versehen zu? Knopf unten öffnet ihn wieder. „Cannot Open Process“: den Client als Administrator starten.' },
+      { text: 'Steht oben doch eine andere Adresse: diese einfügen → Connect:', copy: info.server },
     ], clients: ['KH2 Client'] } };
   },
 };
@@ -410,6 +444,7 @@ async function play(info, ctx) {
   await writeRound(pkg.dir, info, ctx);
   await setup(pkg, info, ctx);
   await ensureRom(info, ctx);
+  await ensureApworld(info, ctx);  // z. B. Isaac: ohne tboir.apworld gibt es keinen Isaac Client
   if (info.setupOnly) return { folder: pkg.dir, setupOnly: true };
   if (STARTERS[info.game.slug]) return { folder: pkg.dir, ...(await STARTERS[info.game.slug](pkg, info, ctx)) };
   await start(pkg, info, ctx);  // andere Spiele: wie bisher über START.bat

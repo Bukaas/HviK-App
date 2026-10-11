@@ -10,7 +10,8 @@ const DEFAULTS = {
   autostart: false,   // Autostart mit Windows: aus, nur in den Einstellungen anschaltbar
   tray: true,         // Schließen = im Hintergrund weiterlaufen (für Benachrichtigungen)
   notify: { lobbys: true, round: true, items: true, mentions: true, bell: true, liga: true, termine: true, admin: true, turnier: true,
-            spieler: true, hints: true, ziel: true, online: true },
+            spieler: true, hints: true, ziel: true, online: true, erfolge: true },
+  toastMode: 'auto',   // Popups unten rechts: 'auto' = nicht während Vollbild-Spielen, 'immer', 'aus'
   discord: true,       // Discord-Status, solange ein Spiel läuft
   spielzeit: true,     // Spielzeit mitzählen
 };
@@ -190,7 +191,7 @@ async function poll() {
         for (const a of it.items) {
           const k = 'ach:' + a.name;
           keys.add(k);
-          if (seen.bell && !seen.bell.has(k)) {
+          if (seen.bell && !seen.bell.has(k) && s.notify.erfolge) {
             note('erfolg', a.name);
             toast.show({ kind: 'achievement', icon: a.icon, title: '🏅 Erfolg freigeschaltet', name: a.name, text: a.desc,
                          foot: `${a.difficulty} · ${a.pct} % der Community haben ihn`, color: a.difficulty, seconds: 7,
@@ -357,6 +358,7 @@ function setGuide(g) { lastGuide = g || null; if (ctx.win) ctx.win.webContents.s
 
 function start(c) {
   ctx = c;
+  toast.setMode(() => settings().toastMode);
   toast.setHandler(async action => {
     if (action.startsWith('open:')) return show(action.slice(5));
     if (action.startsWith('voice:')) {
@@ -381,7 +383,7 @@ function diag() {
 
 function refreshPresence() { presence.update(running, settings().discord); }
 function testToast() {
-  toast.show({ kind: 'achievement', icon: '🏅', title: '🏅 Erfolg freigeschaltet', name: 'So sieht ein Erfolg aus', text: 'Kommt unten rechts, auch über deinem Spiel.', foot: 'Test', color: 'legendär', seconds: 7 });
+  toast.show({ kind: 'achievement', icon: '🏅', title: '🏅 Erfolg freigeschaltet', name: 'So sieht ein Erfolg aus', text: 'So kommen Meldungen unten rechts – während Vollbild-Spielen warten sie, bis du wieder raus bist.', foot: 'Test', color: 'legendär', seconds: 7, force: true });
 }
 module.exports = { start, settings, applyAutostart, notify, notifyAction, note, setRunning, refreshPresence, testToast, getRunning: () => running, setGuide, getGuide: () => lastGuide,
                    isOnline: () => online, diag, DEFAULTS };
