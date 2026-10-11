@@ -1,7 +1,7 @@
 {
   "name": "hvik-app",
   "productName": "HviK",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "HviK Community – Desktop-App",
   "main": "src/main.js",
   "private": true,

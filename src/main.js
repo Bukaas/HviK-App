@@ -91,6 +91,7 @@ ipcMain.on('nav-cmd', (e, cmd) => {
   else if (cmd === 'forward' && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
   else if (cmd === 'reload') wc.reload();
   else if (cmd === 'home') wc.loadURL(SITE);
+  else if (cmd === 'notes') wc.loadURL(SITE + '/app#patchnotes');
   else if (cmd === 'retry') { win.webContents.send('loading'); wc.loadURL(SITE); }
   else if (cmd === 'update-install') autoUpdater.quitAndInstall(true, true);
 });
@@ -105,21 +106,47 @@ function setupUpdates() {
   autoUpdater.on('download-progress', p => win && win.webContents.send('update', { state: 'loading', percent: Math.round(p.percent) }));
   autoUpdater.on('update-downloaded', i => {
     ready = i.version;
+    checking = false;
+    readyNotes = Array.isArray(i.releaseNotes) ? i.releaseNotes.map(n => n.note).join('\n') : (i.releaseNotes || '');
     if (win) win.webContents.send('update', { state: 'ready', version: i.version });
     askUpdate();
   });
-  autoUpdater.on('error', e => console.warn('Update:', e && e.message));
-  const check = () => { if (!ready) autoUpdater.checkForUpdates().catch(() => {}); else askUpdate(); };
+  autoUpdater.on('error', e => { checking = false; console.warn('Update:', e && e.message); });
+  autoUpdater.on('update-not-available', () => { checking = false; });
+  const check = () => {
+    if (ready) return askUpdate();
+    if (checking) return;
+    checking = true;
+    autoUpdater.checkForUpdates().catch(() => { checking = false; });
+  };
   check();
   setInterval(check, 30 * 60 * 1000);  // alle 30 Minuten - ist schon eins geladen, wird nochmal gefragt
+  // "Push": jede Minute kurz bei hvik.org nachsehen - neue Version veröffentlicht -> sofort laden und fragen
+  setInterval(async () => {
+    try {
+      const r = await session.fromPartition('persist:hvik').fetch(`${SITE}/api/app/latest`, { cache: 'no-store' });
+      const l = await r.json();
+      if (l.version) latest = l;
+      if (l.version && newer(l.version, app.getVersion()) && !ready) check();
+    } catch { /* offline */ }
+  }, 60 * 1000);
 }
+const newer = (a, b) => {
+  const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  return false;
+};
 
-// Update fertig geladen -> mitten im Bild fragen (im HviK-Look der Seite, sonst Windows-Dialog)
-let ready = null, asking = false, laterAt = 0;
+// Update fertig geladen -> mitten im Bild fragen (im HviK-Look der Seite, sonst Windows-Dialog), mit Patchnote
+let ready = null, readyNotes = '', latest = null, asking = false, laterAt = 0, checking = false;
+const plain = s => String(s || '').replace(/<\/(li|p)>/gi, '\n').replace(/<[^>]+>/g, '').replace(/^\s*[-*]\s*/gm, '• ')
+  .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\n{2,}/g, '\n').trim();
 async function askUpdate() {
   if (!ready || asking || !win || Date.now() - laterAt < 25 * 60 * 1000) return;
   asking = true;
-  const text = `Version ${ready} der HviK-App ist da (du hast ${app.getVersion()}).\n\nJetzt neu starten und aktualisieren? Das dauert nur ein paar Sekunden.`;
+  const notes = plain(latest && latest.version === ready ? latest.notes : readyNotes);
+  const text = `Version ${ready} der HviK-App ist da (du hast ${app.getVersion()}).` + (notes ? `\n\nNeu:\n${notes}` : '') +
+    '\n\nJetzt neu starten und aktualisieren? Das dauert nur ein paar Sekunden.';
   let yes = null;
   try {
     yes = await view.webContents.executeJavaScript(
@@ -127,7 +154,7 @@ async function askUpdate() {
   } catch { yes = null; }
   if (yes === null) {  // Seite ohne HviK-Dialoge (z. B. offline) -> Windows-Fenster
     const r = await dialog.showMessageBox(win, { type: 'info', title: 'Update verfügbar', message: `Version ${ready} der HviK-App ist da.`,
-      detail: 'Jetzt neu starten und aktualisieren?', buttons: ['Jetzt aktualisieren', 'Später'], defaultId: 0, cancelId: 1 });
+      detail: (notes ? `Neu:\n${notes}\n\n` : '') + 'Jetzt neu starten und aktualisieren?', buttons: ['Jetzt aktualisieren', 'Später'], defaultId: 0, cancelId: 1 });
     yes = r.response === 0;
   }
   asking = false;
