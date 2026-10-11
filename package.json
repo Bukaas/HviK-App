@@ -1,7 +1,7 @@
 {
   "name": "hvik-app",
   "productName": "HviK",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "HviK Community – Desktop-App",
   "main": "src/main.js",
   "private": true,
@@ -44,7 +44,7 @@
           ]
         }
       ],
-      "icon": "build/icon.png",
+      "icon": "build/icon.ico",
       "artifactName": "HviK-Setup-${version}.${ext}"
     },
     "nsis": {

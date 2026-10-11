@@ -43,7 +43,7 @@ function createWindow() {
   win = new BrowserWindow({
     width: b.width || 1320, height: b.height || 840, x: b.x, y: b.y, minWidth: 940, minHeight: 600,
     title: 'HviK', backgroundColor: '#0d0f13', show: false,
-    icon: path.join(__dirname, 'icon.png'),
+    icon: path.join(__dirname, 'icon.ico'),
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#0d0f13', symbolColor: '#c9ced8', height: BAR },
     webPreferences: { preload: path.join(__dirname, 'shell-preload.js') },

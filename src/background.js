@@ -43,7 +43,7 @@ function notify(title, body, url) {
 
 // ---------- Symbol im Infobereich + Schließen = Hintergrund ----------
 function setupTray() {
-  tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'icon.png')).resize({ width: 16, height: 16 }));
+  tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'tray.png')));  // tray@2x.png wird bei hoher Auflösung von selbst genommen
   tray.setToolTip('HviK');
   const menu = () => Menu.buildFromTemplate([
     { label: 'HviK öffnen', click: () => show() },
