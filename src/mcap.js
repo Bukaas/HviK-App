@@ -39,6 +39,7 @@ function serversDat(entries) {
 
 /** Profil anlegen (einmal) und Shader-Mods/-Paket aktuell halten. */
 async function ensureProfile(ctx) {
+  await minecraft.ensureCurseForge();
   const roots = minecraft.instanceRoots(ctx.settings.cfRoot);
   if (!roots.length) throw Object.assign(new Error('Den CurseForge-Ordner habe ich nicht gefunden – ist CurseForge installiert?'), { code: 'NO_ROOT' });
   const all = await minecraft.readInstances(roots);

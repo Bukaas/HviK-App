@@ -74,8 +74,21 @@ async function copyDir(src, dst, say) {
   await walk(src, dst, true);
 }
 
+/** Ist CurseForge überhaupt installiert? Sonst Download-Seite öffnen und klar sagen, was zu tun ist. */
+async function ensureCurseForge() {
+  const exe = [path.join(process.env.LOCALAPPDATA || '', 'Programs', 'CurseForge Windows', 'CurseForge.exe'),
+               path.join(process.env.ProgramFiles || '', 'CurseForge Windows', 'CurseForge.exe')].find(p => fs.existsSync(p));
+  if (exe) return;
+  const proto = await run('reg', ['query', 'HKCR\\curseforge', '/ve']);  // anders installiert? Dann gibt es wenigstens den Link-Handler
+  if (/curseforge/i.test(proto)) return;
+  shell.openExternal('https://www.curseforge.com/download/app');
+  throw Object.assign(new Error('Für Minecraft brauchst du die kostenlose CurseForge-App – ich habe die Download-Seite geöffnet. '
+    + 'Installieren, einmal starten und mit deinem Microsoft-Konto anmelden, dann nochmal ▶ Spielen.'), { code: 'NO_CF' });
+}
+
 /** Profil "<Pack> (HviK Link)" finden oder anlegen. */
 async function ensureProfile(info, ctx) {
+  await ensureCurseForge();
   const { say, get, settings } = ctx;
   const pack = info.pack;
   const roots = instanceRoots(settings.cfRoot);
@@ -233,4 +246,4 @@ async function status(info, settings) {
   return { profile: inst ? inst.name : null, root: true };
 }
 
-module.exports = { play, status, instanceRoots, readInstances, closeCurseForge, launch };
+module.exports = { play, status, instanceRoots, readInstances, closeCurseForge, launch, ensureCurseForge };

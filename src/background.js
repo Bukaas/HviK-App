@@ -43,10 +43,17 @@ function show(url) {
 }
 
 function notify(title, body, url) {
+  notifyAction(title, body, () => show(url));
+}
+// Windows-Benachrichtigung mit eigener Aktion beim Klick (z. B. Update installieren)
+const keep = new Set();  // Benachrichtigungen festhalten, sonst räumt der Speicher sie weg und der Klick geht ins Leere
+function notifyAction(title, body, onClick) {
   note('push', `${title} – ${body}`);
   if (!Notification.isSupported()) return;
   const n = new Notification({ title, body, icon: path.join(__dirname, 'icon.png'), silent: false });
-  n.on('click', () => show(url));
+  keep.add(n);
+  n.on('click', () => { keep.delete(n); onClick && onClick(); });
+  n.on('close', () => keep.delete(n));
   n.show();
 }
 
@@ -65,7 +72,15 @@ function setupTray() {
       notify('HviK läuft im Hintergrund weiter', 'Damit du Benachrichtigungen bekommst. Ganz beenden: Rechtsklick auf das HviK-Symbol unten rechts → Beenden.');
     }
   });
-  app.on('before-quit', () => { quitting = true; });
+  // Beim Beenden: gesammelte Spielzeit noch schnell abgeben (höchstens 3 Sekunden warten)
+  let flushedOnQuit = false;
+  app.on('before-quit', e => {
+    quitting = true;
+    if (flushedOnQuit || !track || !running || track.pending < 60 || !settings().spielzeit) return;
+    e.preventDefault();
+    flushedOnQuit = true;
+    Promise.race([flushPlaytime(true), new Promise(r => setTimeout(r, 3000))]).finally(() => app.quit());
+  });
 }
 
 // Schnellstart: laufendes Spiel, offene Lobbys/Runden, nächster Termin
@@ -105,6 +120,12 @@ async function poll() {
     fails = 0;
     if (!online) { online = true; ctx.onNet(true); note('netz', 'wieder verbunden'); }
   } catch (e) {
+    if (e.status) {  // hvik.org hat geantwortet (z. B. 401 = nicht eingeloggt) -> Verbindung ist da, nur ohne Login gibt es nichts zu melden
+      fails = 0;
+      if (!online) { online = true; ctx.onNet(true); }
+      updateMenu();
+      return;
+    }
     if (++fails >= 2 && online) { online = false; ctx.onNet(false); note('netz', 'keine Verbindung: ' + e.message); }
     updateMenu();
     return;
@@ -142,18 +163,25 @@ async function poll() {
     if (b && b.items) {
       const keys = new Set();
       for (const it of b.items) {
-        const k = it.key || (it.kind === 'achievements' ? 'ach:' + it.items.map(a => a.id || a.name).join(',') : null);
-        if (!k || it.seen) continue;
-        keys.add(k);
-        if (seen.bell && !seen.bell.has(k)) {
-          if (it.kind === 'stuck') notify('🧱 Jemand braucht dich', `${it.who} braucht ${it.item ? '„' + it.item + '“' : 'etwas'} aus deiner Welt (${it.world}).`, it.url);
-          else if (it.kind === 'achievements') for (const a of it.items) {
-            note('erfolg', a.name);
-            toast.show({ kind: 'achievement', icon: a.icon, title: '🏅 Erfolg freigeschaltet', name: a.name, text: a.desc,
-                         foot: `${a.difficulty} · ${a.pct} % der Community haben ihn`, color: a.difficulty, seconds: 7,
-                         buttons: [{ label: 'Ansehen', action: 'open:/profil' }] });
+        if (it.seen) continue;
+        if (it.kind === 'achievements') {  // jeder Erfolg einzeln merken - sonst ploppen beim nächsten alle nochmal auf
+          for (const a of it.items) {
+            const k = 'ach:' + a.name;
+            keys.add(k);
+            if (seen.bell && !seen.bell.has(k)) {
+              note('erfolg', a.name);
+              toast.show({ kind: 'achievement', icon: a.icon, title: '🏅 Erfolg freigeschaltet', name: a.name, text: a.desc,
+                           foot: `${a.difficulty} · ${a.pct} % der Community haben ihn`, color: a.difficulty, seconds: 7,
+                           buttons: [{ label: 'Ansehen', action: 'open:/profil' }] });
+            }
           }
+          continue;
         }
+        const k = it.key;
+        if (!k) continue;
+        keys.add(k);
+        if (seen.bell && !seen.bell.has(k) && it.kind === 'stuck')
+          notify('🧱 Jemand braucht dich', `${it.who} braucht ${it.item ? '„' + it.item + '“' : 'etwas'} aus deiner Welt (${it.world}).`, it.url);
       }
       seen.bell = keys;
     }
@@ -253,6 +281,8 @@ async function flushPlaytime(force) {
   try { await ctx.postJson('/api/spielzeit', { game: running.label, icon: running.icon, seconds }); } catch { track.pending += seconds; }
 }
 async function trackTick() {
+  // Spiele ohne Prozess-Erkennung: "läuft" (und der Discord-Status) endet spätestens nach 4 Stunden von selbst
+  if (running && !track && Date.now() - running.at > 4 * 60 * 60 * 1000) { note('spiel', `${running.label}: nach 4 Std. beendet`); setRunning(null); return; }
   if (!track || !running) return;
   const list = await procList();
   if (!list) return;
@@ -306,5 +336,5 @@ function refreshPresence() { presence.update(running, settings().discord); }
 function testToast() {
   toast.show({ kind: 'achievement', icon: '🏅', title: '🏅 Erfolg freigeschaltet', name: 'So sieht ein Erfolg aus', text: 'Kommt unten rechts, auch über deinem Spiel.', foot: 'Test', color: 'legendär', seconds: 7 });
 }
-module.exports = { start, settings, applyAutostart, notify, note, setRunning, refreshPresence, testToast, getRunning: () => running, setGuide, getGuide: () => lastGuide,
+module.exports = { start, settings, applyAutostart, notify, notifyAction, note, setRunning, refreshPresence, testToast, getRunning: () => running, setGuide, getGuide: () => lastGuide,
                    isOnline: () => online, diag, DEFAULTS };

@@ -1,5 +1,5 @@
 // HviK Desktop-App: Fenster mit eigener Titelleiste, darin hvik.org (Login über Discord wie auf der Seite).
-const { app, BrowserWindow, WebContentsView, ipcMain, shell, nativeTheme, session, dialog } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, shell, nativeTheme, session, dialog, Menu } = require('electron');
 const minecraft = require('./minecraft');
 const archipelago = require('./archipelago');
 const background = require('./background');
@@ -8,7 +8,8 @@ const fs = require('fs');
 
 const SITE = process.env.HVIK_SITE || 'https://hvik.org';
 const BAR = 40;  // Höhe der Titelleiste
-const ALLOWED = [/^https:\/\/(www\.)?hvik\.org(\/|$)/, /^https:\/\/(\w+\.)?discord\.com\//, /^https:\/\/(\w+\.)?discordapp\.com\//,
+// Im App-Fenster bleiben nur hvik.org und der Discord-Login - Einladungen, Kanäle usw. gehen ins Discord-Programm bzw. den Browser
+const ALLOWED = [/^https:\/\/(www\.)?hvik\.org([/?#]|$)/, /^https:\/\/(\w+\.)?discord(app)?\.com\/(oauth2|login|api\/(v\d+\/)?oauth2|register|2fa|verify|reset)/,
                  /^https:\/\/(\w+\.)?hcaptcha\.com\//];
 
 nativeTheme.themeSource = 'dark';
@@ -86,6 +87,26 @@ function createWindow() {
     setTimeout(() => { if (firstLoad) { win.webContents.send('loading'); view.webContents.loadURL(SITE); } }, 15000);  // von selbst nochmal versuchen
   });
   wc.loadURL(SITE);
+  shortcuts(wc);
+  shortcuts(win.webContents);
+  // aus dem Infobereich geöffnet: offene Update-Frage bzw. "Neu in Version" jetzt zeigen
+  win.on('show', () => { setTimeout(() => { askUpdate(); showWhatsNew(); }, 800); });
+}
+
+// Tastenkürzel - wirken immer auf die Seite (das versteckte Standard-Menü ist aus, sonst lädt Strg+R die Titelleiste neu)
+function shortcuts(contents) {
+  contents.on('before-input-event', (e, i) => {
+    if (i.type !== 'keyDown') return;
+    const k = (i.key || '').toLowerCase(), ctrl = i.control || i.meta, v = view.webContents;
+    const hit = fn => { e.preventDefault(); fn(); };
+    if (k === 'f5' || (ctrl && k === 'r')) hit(() => (i.shift ? v.reloadIgnoringCache() : v.reload()));
+    else if (i.alt && k === 'arrowleft') hit(() => v.navigationHistory.canGoBack() && v.navigationHistory.goBack());
+    else if (i.alt && k === 'arrowright') hit(() => v.navigationHistory.canGoForward() && v.navigationHistory.goForward());
+    else if (ctrl && (k === '+' || k === '=' || k === 'add')) hit(() => v.setZoomLevel(Math.min(v.getZoomLevel() + .5, 4)));
+    else if (ctrl && (k === '-' || k === 'subtract')) hit(() => v.setZoomLevel(Math.max(v.getZoomLevel() - .5, -3)));
+    else if (ctrl && k === '0') hit(() => v.setZoomLevel(0));
+    else if (k === 'f12' || (ctrl && i.shift && k === 'i')) hit(() => { if (!app.isPackaged) v.openDevTools({ mode: 'detach' }); });
+  });
 }
 
 ipcMain.on('nav-cmd', (e, cmd) => {
@@ -115,6 +136,9 @@ function setupUpdates() {
     checking = false;
     readyNotes = Array.isArray(i.releaseNotes) ? i.releaseNotes.map(n => n.note).join('\n') : (i.releaseNotes || '');
     if (win) win.webContents.send('update', { state: 'ready', version: i.version });
+    // immer: kleine Windows-Benachrichtigung unten an der Taskleiste - Klick installiert
+    background.notifyAction(`✨ Update ${i.version} ist da`, (plain(latest && latest.version === i.version ? latest.notes : readyNotes).split('\n')[0] || 'Neue Version der HviK-App.')
+      + '\nKlick hier zum Installieren (App startet kurz neu).', () => autoUpdater.quitAndInstall(true, true));
     askUpdate();
   });
   autoUpdater.on('error', e => { checking = false; console.warn('Update:', e && e.message); });
@@ -148,7 +172,8 @@ let ready = null, readyNotes = '', latest = null, asking = false, laterAt = 0, c
 const plain = s => String(s || '').replace(/<\/(li|p)>/gi, '\n').replace(/<[^>]+>/g, '').replace(/^\s*[-*]\s*/gm, '• ')
   .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\n{2,}/g, '\n').trim();
 async function askUpdate() {
-  if (!ready || asking || !win || Date.now() - laterAt < 25 * 60 * 1000) return;
+  // nur fragen, wenn man das Fenster auch sieht (sonst reicht die Benachrichtigung; beim Öffnen wird gefragt)
+  if (!ready || asking || !win || !win.isVisible() || win.isMinimized() || Date.now() - laterAt < 25 * 60 * 1000) return;
   asking = true;
   const notes = plain(latest && latest.version === ready ? latest.notes : readyNotes);
   const text = `Version ${ready} der HviK-App ist da (du hast ${app.getVersion()}).` + (notes ? `\n\nNeu:\n${notes}` : '') +
@@ -175,13 +200,17 @@ function saveSettings(s) { fs.writeFileSync(settingsFile(), JSON.stringify(s, nu
 const fromSite = e => { try { return new URL(e.senderFrame.url).origin === new URL(SITE).origin; } catch { return false; } };
 async function siteGet(url, json) {
   const r = await session.fromPartition('persist:hvik').fetch(url.startsWith('http') ? url : SITE + url, { cache: 'no-store' });
-  if (!r.ok) throw new Error(`hvik.org antwortet nicht (${r.status}).`);
+  if (!r.ok) throw httpError(r.status);
   return json ? r.json() : Buffer.from(await r.arrayBuffer());
 }
 async function sitePost(url, body) {
   const r = await session.fromPartition('persist:hvik').fetch(SITE + url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}), cache: 'no-store' });
-  if (!r.ok) throw new Error(`hvik.org antwortet nicht (${r.status}).`);
+  if (!r.ok) throw httpError(r.status);
   return r.json();
+}
+// hvik.org hat geantwortet, aber mit Fehler (z. B. 401 = nicht eingeloggt) - das ist KEIN Verbindungsproblem
+function httpError(status) {
+  return Object.assign(new Error(`hvik.org antwortet nicht (${status}).`), { status });
 }
 // Verbindung weg/wieder da: Leiste oben zeigt es an; kam die Seite nicht, wird sie neu geladen
 function onNet(ok) {
@@ -293,7 +322,7 @@ ipcMain.handle('ap-open-folder', async (e, folder) => {
 let whatsNewBusy = false;
 async function showWhatsNew() {
   const v = app.getVersion();
-  if (whatsNewBusy || loadSettings().seenVersion === v) return;
+  if (whatsNewBusy || loadSettings().seenVersion === v || !win || !win.isVisible() || win.isMinimized()) return;  // erst, wenn man's sieht
   whatsNewBusy = true;
   try {
     const hasDialog = await view.webContents.executeJavaScript("typeof hvikAlert === 'function'", true);
@@ -347,6 +376,7 @@ app.on('second-instance', () => {
   win.focus();
 });
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);  // kein verstecktes Standard-Menü (Strg+R, Entwicklertools ...) - die Kürzel kommen aus shortcuts()
   createWindow();
   setupUpdates();
   background.start({ win, view, site: SITE, loadSettings, saveSettings, fetchJson: u => siteGet(u, true), postJson: sitePost, onNet });
