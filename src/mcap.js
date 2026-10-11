@@ -10,8 +10,10 @@ const minecraft = require('./minecraft');
 const NAME = 'Minecraft 26.2 (HviK Archipelago)';
 const MC = '26.2';
 const LOADER = 'neoforge';
-const MODS = ['sodium', 'iris'];                     // Modrinth-Projekte (Shader brauchen Iris, Iris braucht Sodium)
-const SHADER = 'complementary-reimagined';
+const MODS = ['sodium', 'iris', 'jei'];              // Modrinth-Projekte: Shader brauchen Iris (+ Sodium), JEI für Rezepte
+// die üblichen Shader aus den Modpacks - liegen bereit, im Spiel nur noch auswählen. Der erste ist vorausgewählt.
+const SHADERS = ['complementary-reimagined', 'complementary-unbound', 'bsl-shaders', 'makeup-ultra-fast-shaders',
+                 'sildurs-vibrant-shaders', 'photon-shader', 'bliss-shader'];
 
 async function modrinthLatest(project, opts, get) {
   const q = new URLSearchParams({ game_versions: JSON.stringify([MC]), ...(opts.loader ? { loaders: JSON.stringify([opts.loader]) } : {}) });
@@ -64,13 +66,19 @@ async function ensureProfile(ctx) {
         await fsp.writeFile(path.join(mods, f.name), await ctx.download(f.url));
       }
     }
-    const s = await modrinthLatest(SHADER, {}, ctx.download);
-    if (!fs.existsSync(path.join(packs, s.name))) {
-      ctx.say(`Lade die Shader (${s.name}) …`);
-      await fsp.writeFile(path.join(packs, s.name), await ctx.download(s.url));
+    let first = null;
+    for (const sp of SHADERS) {
+      try {
+        const s = await modrinthLatest(sp, {}, ctx.download);
+        first = first || s.name;
+        if (!fs.existsSync(path.join(packs, s.name))) {
+          ctx.say(`Lade Shader: ${s.name} …`);
+          await fsp.writeFile(path.join(packs, s.name), await ctx.download(s.url));
+        }
+      } catch (e) { /* ein fehlender Shader ist kein Grund, nicht zu spielen */ }
     }
     const iris = path.join(config, 'iris.properties');
-    if (!fs.existsSync(iris)) await fsp.writeFile(iris, `enableShaders=true\nshaderPack=${s.name}\n`);  // danach entscheidet der Spieler selbst
+    if (first && !fs.existsSync(iris)) await fsp.writeFile(iris, `enableShaders=true\nshaderPack=${first}\n`);  // danach entscheidet der Spieler selbst
   } catch (e) {
     if (!created && fs.existsSync(path.join(mods))) ctx.say('Shader-Update gerade nicht möglich – spiele mit dem bisherigen Stand.');
     else throw e;

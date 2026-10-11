@@ -20,6 +20,10 @@ const ROM_NEEDS = {
 };
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const LAUNCHER = path.join(AP_DIR, 'ArchipelagoLauncher.exe');
+function detached(exe, args, cwd) {
+  spawn(exe, args, { cwd: cwd || path.dirname(exe), detached: true, stdio: 'ignore', windowsHide: false }).unref();
+}
 const exists = p => fs.existsSync(p);
 
 function ps(command) {  // PowerShell-Befehl ausführen und warten
@@ -169,8 +173,38 @@ function runConsole(dir, title, inner, wait) {
   });
 }
 
+// Einrichten ohne Fenster: Skripte ohne Rückfragen laufen unsichtbar, SMW macht die App selbst
+const SILENT_SETUP = new Set(['minecraft', 'the-binding-of-isaac']);
+function runHidden(dir, script) {
+  return new Promise(res => execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script],
+    { cwd: dir, windowsHide: true, maxBuffer: 4 << 20 }, (err, out, errOut) => res({ code: err ? (err.code || 1) : 0, out: String(out || '') + String(errOut || '') })));
+}
+async function setupSmw(ctx) {
+  if (!exists(path.join(AP_DIR, 'host.yaml'))) {  // Archipelago legt seine Einstellungen beim ersten Start an
+    ctx.say('Archipelago legt einmal seine Einstellungen an …');
+    detached(LAUNCHER, []);
+    for (let i = 0; i < 30 && !exists(path.join(AP_DIR, 'host.yaml')); i++) await sleep(500);
+    await sleep(1500);
+    await new Promise(r => execFile('taskkill', ['/IM', 'ArchipelagoLauncher.exe', '/F'], { windowsHide: true }, () => r()));
+  }
+}
+
 async function setup(pkg, info, ctx) {
   if (pkg.mark.setupDone || !exists(path.join(pkg.dir, 'EINRICHTEN.bat'))) return;
+  if (info.game.slug === 'super-mario-world' || SILENT_SETUP.has(info.game.slug)) {
+    ctx.say(`Richte ${info.game.name} einmalig ein …`);
+    if (info.game.slug === 'super-mario-world') await setupSmw(ctx);
+    else {
+      const r = await runHidden(pkg.dir, path.join(pkg.dir, 'tools', 'einrichten.ps1'));
+      if (r.code !== 0) {
+        const why = r.out.split(/\r?\n/).filter(l => /\[!\]/.test(l)).map(l => l.replace(/^\s*\[!\]\s*/, '')).join(' ');
+        throw new Error('Einrichten hat nicht geklappt: ' + (why || 'unbekannter Fehler') );
+      }
+    }
+    pkg.mark.setupDone = new Date().toISOString();
+    await fsp.writeFile(pkg.markFile, JSON.stringify(pkg.mark, null, 2));
+    return;
+  }
   ctx.say('Einmaliges Einrichten läuft im Fenster – dort den Anweisungen folgen und am Ende schließen …');
   const code = path.join(pkg.dir, '.hvik-einrichten-code.txt');
   await fsp.rm(code, { force: true });
@@ -192,18 +226,91 @@ async function start(pkg, info, ctx) {
   await runConsole(pkg.dir, `HviK Archipelago - ${info.game.name}`, ['call START.bat'], false);
 }
 
-/** Minecraft: eigene Welt = Archipelago-Server auf dem eigenen PC (Archipelago-Client) - oder der zugeteilte HviK-Server.
- *  Gespielt wird mit dem CurseForge-Profil mit Shadern, der Server steht schon in der Serverliste. */
-async function playMinecraft(pkg, info, ctx) {
-  if (info.mode === 'server') {
-    if (!info.game_server) throw new Error('Dir ist noch kein Server zugeteilt – erst „Server anfragen“, ein Admin bestätigt dann.');
-    return mcap.play({ name: 'HviK Archipelago – Server', ip: info.game_server }, ctx);
-  }
-  ctx.say('Starte deinen Archipelago-Minecraft-Server (Fenster offen lassen, beim ersten Mal alles mit JA bestätigen) …');
-  await start(pkg, info, ctx);
-  const r = await mcap.play({ name: 'HviK Archipelago (dein PC)', ip: 'localhost' }, ctx);
-  return { ...r, hint: 'Warte im Server-Fenster auf „Server Running“, dann in Minecraft: Mehrspieler → „HviK Archipelago (dein PC)“ → im Chat Strg+V (connect) und /start.' };
+// ---------- Direkt starten (ohne START.bat) + Schritt-für-Schritt-Anleitung für das, was man selbst machen muss ----------
+async function roundFile(dir, re) {
+  const mine = path.join(dir, 'deine-runde');
+  const f = (await fsp.readdir(mine).catch(() => [])).find(x => re.test(x));
+  if (!f) throw new Error('Deine Datei für diese Runde fehlt – ist die Runde schon gestartet? Sonst gleich nochmal ▶ Spielen.');
+  return path.join(mine, f);
 }
+const hostPort = s => String(s || '').replace(':', ' ');
+/** Archipelago-Clients, die die Seite über die Anleitung öffnen darf */
+const CLIENTS = ['KH2 Client', 'Isaac Client', 'SNI Client', 'Text Client'];
+function openClient(name) {
+  if (!CLIENTS.includes(name)) throw new Error('Unbekannter Client.');
+  detached(LAUNCHER, [name]);
+}
+
+const STARTERS = {
+  /** Minecraft: eigene Welt = Archipelago-Server auf dem eigenen PC (Archipelago-Client) - oder der zugeteilte HviK-Server.
+   *  Gespielt wird mit dem CurseForge-Profil mit Shadern + JEI, der Server steht schon in der Serverliste. */
+  async minecraft(pkg, info, ctx) {
+    if (info.mode === 'server') {
+      if (!info.game_server) throw new Error('Dir ist noch kein Server zugeteilt.');
+      const r = await mcap.play({ name: 'HviK Archipelago – Server', ip: info.game_server }, ctx);
+      return { ...r, guide: { title: 'Minecraft – auf dem HviK-Server', steps: [
+        { text: 'Minecraft startet über CurseForge (Profil mit Shadern und JEI).' },
+        { text: 'Mehrspieler → „HviK Archipelago – Server“ → Beitreten.' },
+        { text: 'Die Mod ist schon mit Archipelago verbunden. Wenn alle da sind, im Chat:', copy: '/start' },
+        { text: 'Shader wechseln: Esc → Optionen → Grafik → Shader-Pakete. Rezepte: mit der Maus über ein Item und R drücken (JEI).' },
+      ] } };
+    }
+    const apmc = await roundFile(pkg.dir, /\.apmc$/i);
+    ctx.say('Starte deinen Archipelago-Minecraft-Server …');
+    detached(LAUNCHER, [apmc]);
+    const r = await mcap.play({ name: 'HviK Archipelago (dein PC)', ip: 'localhost' }, ctx);
+    return { ...r, guide: { title: 'Minecraft – deine eigene Welt', steps: [
+      { text: 'Im Fenster „Minecraft Client“ läuft dein eigener Server. Beim allerersten Mal fragt er nach EULA, Java, NeoForge und Mod: alles mit „Ja“ bestätigen. Warten, bis „Server Running“ steht – das Fenster offen lassen.' },
+      { text: 'Minecraft startet gleichzeitig über CurseForge (Profil mit Shadern und JEI; beim ersten Mal lädt CurseForge noch Minecraft nach).' },
+      { text: 'Im Spiel: Mehrspieler → „HviK Archipelago (dein PC)“ → Beitreten.' },
+      { text: 'Die Mod verbindet sich von selbst mit Archipelago. Falls im Chat nichts von „connected“ steht: T drücken und einfügen:', copy: `/connect ${hostPort(info.server)}` },
+      { text: 'Los geht\'s mit:', copy: '/start' },
+      { text: '!hint, !missing usw. gehen direkt im Minecraft-Chat. Shader: Esc → Optionen → Grafik → Shader-Pakete. Rezepte: Maus über ein Item + R (JEI).' },
+    ] } };
+  },
+
+  async 'super-mario-world'(pkg, info, ctx) {
+    const patch = await roundFile(pkg.dir, /\.apsmw$/i);
+    await setHostYaml('sni_options', 'snes_rom_start', JSON.stringify(path.join(pkg.dir, 'snes9x', 'snes9x-x64.exe')));
+    ctx.say('Starte SNI Client und Emulator …');
+    detached(path.join(AP_DIR, 'ArchipelagoSNIClient.exe'), ['--connect', info.server, patch]);
+    return { guide: { title: 'Super Mario World', steps: [
+      { text: 'Der SNI Client patcht deine ROM und startet den Emulator (snes9x) – das dauert ein paar Sekunden.' },
+      { text: 'Verbunden ist alles, wenn im SNI Client „… has joined“ steht. Dann einfach spielen!' },
+      { text: 'Falls er nicht verbindet: im SNI Client oben die Adresse eintragen → Connect:', copy: info.server },
+    ] } };
+  },
+
+  async 'the-binding-of-isaac'(pkg, info, ctx) {
+    ctx.say('Starte The Binding of Isaac und den Isaac Client …');
+    detached('cmd.exe', ['/c', 'start', '', 'steam://rungameid/250900'], pkg.dir);
+    openClient('Isaac Client');
+    return { guide: { title: 'The Binding of Isaac', steps: [
+      { text: 'Isaac startet über Steam, der Isaac Client geht auf.' },
+      { text: 'Im Isaac Client oben ins Server-Feld einfügen → Connect:', copy: info.server },
+      { text: 'Fragt er nach deinem Namen:', copy: info.slot },
+      { text: 'Dann nach dem Speicherplatz (1–3): den Spielstand, den du in Isaac benutzt.' },
+      { text: 'Im Spiel: Mods-Menü → „The Archipelago of Isaac“ muss an sein → neuen Run starten.' },
+      { text: 'Client-Befehle: /savefile 1-3 (Speicherplatz wechseln), /resync (Items neu holen).' },
+    ], clients: ['Isaac Client'] } };
+  },
+
+  async 'kingdom-hearts-2'(pkg, info, ctx) {
+    const seed = await roundFile(pkg.dir, /^AP-.*\.zip$/i);
+    const mm = path.join(pkg.dir, 'OpenKH', 'openkh', 'OpenKh.Tools.ModsManager.exe');
+    if (!exists(mm)) throw new Error('Der OpenKH Mod Manager fehlt – das Einrichten ist nicht fertig geworden. Nochmal ▶ Spielen.');
+    ctx.say('Öffne den OpenKH Mod Manager …');
+    detached(mm, []);
+    return { guide: { title: 'Kingdom Hearts II', steps: [
+      { text: 'Im OpenKH Mod Manager: grünes Plus → „Select and install Mod Archive“ → deine Seed-Datei wählen (Pfad zum Einfügen):', copy: seed },
+      { text: 'Die Seed GANZ NACH OBEN schieben. Alte Seeds aus früheren Runden abhaken.' },
+      { text: '„Mod Loader“ → „Build and Run“. KH2 startet. Neue Runde = NEUER Spielstand → du landest im Garden of Assemblage.' },
+      { text: 'Wenn du im Garden of Assemblage bist: KH2 Client öffnen (Knopf unten) und oben die Adresse eintragen → Connect:', copy: info.server },
+      { text: 'Fragt er nach deinem Namen:', copy: info.slot },
+      { text: 'Der Client muss die ganze Zeit offen bleiben. „Cannot Open Process“: den Client als Administrator starten.' },
+    ], clients: ['KH2 Client'] } };
+  },
+};
 
 /** ▶ Spielen (Runde läuft) bzw. ⚙️ Einrichten (Runde noch in der Lobby). */
 async function play(info, ctx) {
@@ -215,8 +322,8 @@ async function play(info, ctx) {
   await setup(pkg, info, ctx);
   await ensureRom(info, ctx);
   if (info.setupOnly) return { folder: pkg.dir, setupOnly: true };
-  if (info.game.slug === 'minecraft') return { folder: pkg.dir, ...(await playMinecraft(pkg, info, ctx)) };
-  await start(pkg, info, ctx);
+  if (STARTERS[info.game.slug]) return { folder: pkg.dir, ...(await STARTERS[info.game.slug](pkg, info, ctx)) };
+  await start(pkg, info, ctx);  // andere Spiele: wie bisher über START.bat
   return { folder: pkg.dir };
 }
 
@@ -227,4 +334,4 @@ async function status(info) {
   return { known: true, ready: !!mark.setupDone, archipelago: exists(path.join(AP_DIR, 'ArchipelagoLauncher.exe')), folder: path.join(ROOT, info.starter.folder) };
 }
 
-module.exports = { play, status, ROOT };
+module.exports = { play, status, openClient, ROOT };

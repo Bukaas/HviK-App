@@ -201,6 +201,10 @@ ipcMain.handle('ap-play', async (e, rid, setupOnly, mode) => {
     apBusy = false;
   }
 });
+ipcMain.handle('ap-client', async (e, name) => {
+  if (!fromSite(e)) return null;
+  try { archipelago.openClient(String(name)); return { ok: true }; } catch (err) { return { ok: false, message: err.message }; }
+});
 ipcMain.handle('ap-open-folder', async (e, folder) => {
   if (!fromSite(e)) return null;
   const target = folder && path.resolve(folder).startsWith(archipelago.ROOT) ? folder : archipelago.ROOT;

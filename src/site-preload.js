@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('hvikApp', {
     status: rid => ipcRenderer.invoke('ap-status', rid),
     play: (rid, setupOnly, mode) => ipcRenderer.invoke('ap-play', rid, !!setupOnly, mode || ''),
     openFolder: folder => ipcRenderer.invoke('ap-open-folder', folder),
+    openClient: name => ipcRenderer.invoke('ap-client', name),
     onProgress: fn => { ipcRenderer.removeAllListeners('ap-progress'); ipcRenderer.on('ap-progress', (e, t) => fn(t)); },
   },
 });
