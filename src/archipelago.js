@@ -375,6 +375,25 @@ async function findFile(dir, re, depth) {
   return null;
 }
 
+/** MSYS2 (Werkzeuge zum Bauen von Mario 64) nach C:\msys64 - der SM64AP-Launcher installiert es nicht selbst,
+ *  holt sich danach aber alle Pakete von allein ("Check requirements" → automatische Installation). */
+const MSYS_DIR = 'C:\\msys64';
+const MSYS_URL = 'https://github.com/msys2/msys2-installer/releases/download/nightly-x86_64/msys2-base-x86_64-latest.sfx.exe';
+async function ensureMsys2(ctx) {
+  const bash = path.join(MSYS_DIR, 'usr', 'bin', 'bash.exe');
+  if (exists(bash)) return;
+  ctx.say('Lade MSYS2 (Werkzeuge zum Bauen von Mario 64, ca. 45 MB) …');
+  const sfx = path.join(os.tmpdir(), 'msys2-base-x86_64-latest.sfx.exe');
+  await fsp.writeFile(sfx, await ctx.download(MSYS_URL));
+  ctx.say('Entpacke MSYS2 nach C:\\msys64 …');
+  await new Promise(res => execFile(sfx, ['-y', '-oC:\\'], { windowsHide: true, timeout: 10 * 60 * 1000 }, () => res()));
+  fsp.rm(sfx, { force: true }).catch(() => {});
+  if (!exists(bash)) throw new Error('MSYS2 ließ sich nicht nach C:\\msys64 entpacken. Bitte von msys2.org installieren (Ordner C:\\msys64) und nochmal ▶ Spielen.');
+  ctx.say('Richte MSYS2 einmal ein (erster Start, dauert etwa eine Minute) …');
+  await new Promise(res => execFile(bash, ['-lc', 'exit 0'], { windowsHide: true, timeout: 5 * 60 * 1000,
+    env: { ...process.env, MSYSTEM: 'MINGW64', CHERE_INVOKING: '1' } }, () => res()));
+}
+
 /** Fertig gebautes Mario 64 aus der Build-Liste des SM64AP-Launchers (SM64APLauncher_config.json neben dem Launcher).
  *  Spiel: <directory>/<Name>/build/<us|jp>_pc/sm64.<us|jp>.f3dex2e.exe - der zuletzt gebaute gewinnt. */
 async function sm64Build(launcherDir) {
@@ -464,13 +483,15 @@ const STARTERS = {
         { text: 'Sterne sind Checks: jeder Stern, den du holst, schickt etwas los – und Schlüssel, Kappen und Kanonen kommen von den anderen.' },
       ] } };
     }
+    await ensureMsys2(ctx);
     if (!pkg.justSetup) {  // beim Einrichten hat das Skript ihn schon geöffnet
       ctx.say('Öffne den SM64AP-Launcher – das Spiel muss einmal gebaut werden …');
       detached(launcherExe, []);
     }
     return { guide: { title: 'Super Mario 64 – einmal das Spiel bauen', steps: [
       { text: 'Du brauchst eine eigene Super Mario 64 ROM: USA oder Japan als .z64 (EU geht nicht).' },
-      { text: 'Im SM64AP-Launcher: „Requirements and Debugging“ → fehlende Werkzeuge (MSYS2) installieren lassen und „Register SM64 ROM“ → deine ROM wählen.' },
+      { text: 'Die Werkzeuge (MSYS2 in C:\msys64) hat die App schon installiert. Im SM64AP-Launcher: „Requirements and Debugging“ → „Check requirements“ → bei der Frage nach automatischer Installation „Ja“ und warten.' },
+      { text: 'Im selben Fenster „Register SM64 Rom“ → deine ROM wählen.' },
       { text: '„Compile default SM64AP build“ → Browse → einen Ordner OHNE Leerzeichen, z. B.:', copy: 'C:\\SM64AP' },
       { text: 'Einen Namen eingeben → „Download Files“ → „Create Build“. Beim ersten Mal dauert das 10–30 Minuten.' },
       { text: 'Wenn der Build fertig ist: Launcher schließen und hier nochmal ▶ Spielen – ab dann startet Mario 64 direkt und verbindet sich von selbst.' },
