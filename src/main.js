@@ -340,7 +340,7 @@ ipcMain.handle('ap-play', async (e, rid, setupOnly, mode) => {
 });
 ipcMain.handle('ap-client', async (e, name) => {
   if (!fromSite(e)) return null;
-  try { archipelago.openClient(String(name)); return { ok: true }; } catch (err) { return { ok: false, message: err.message }; }
+  try { await archipelago.apInfo(); archipelago.openClient(String(name)); return { ok: true }; } catch (err) { return { ok: false, message: err.message }; }
 });
 ipcMain.handle('ap-open-folder', async (e, folder) => {
   if (!fromSite(e)) return null;

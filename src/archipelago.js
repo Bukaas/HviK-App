@@ -10,7 +10,7 @@ const mcap = require('./mcap');
 
 const ROOT = path.join(os.homedir(), 'HviK Archipelago');   // der "Archi-Spiele-Ordner"
 const ROMS = path.join(ROOT, 'ROMs');
-const AP_DIR = 'C:\\ProgramData\\Archipelago';
+let AP_DIR = 'C:\\ProgramData\\Archipelago';   // Standard - wo es wirklich liegt, sagt apInfo()
 const AP_SETUP = 'https://github.com/ArchipelagoMW/Archipelago/releases/download/0.6.7/Setup.Archipelago.0.6.7.exe';
 
 // Spiele, die eine eigene Datei vom Spieler brauchen (z. B. ROM): wo sie in host.yaml eingetragen wird
@@ -20,7 +20,6 @@ const ROM_NEEDS = {
 };
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const LAUNCHER = path.join(AP_DIR, 'ArchipelagoLauncher.exe');
 function detached(exe, args, cwd) {
   spawn(exe, args, { cwd: cwd || path.dirname(exe), detached: true, stdio: 'ignore', windowsHide: false }).unref();
 }
@@ -35,17 +34,29 @@ const psq = s => `'${String(s).replace(/'/g, "''")}'`;  // PowerShell-String in 
 const AP_VERSION = '0.6.7';
 const older = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); return false; };
 
-/** Installierte Archipelago-Version aus der Windows-Programmliste ("Archipelago 0.6.7") - null, wenn unbekannt. */
-async function installedApVersion() {
-  const r = await ps("Get-ChildItem 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall' -ErrorAction SilentlyContinue | Get-ItemProperty | Where-Object { $_.DisplayName -like 'Archipelago*' } | ForEach-Object { $_.DisplayName }");
-  const m = /Archipelago\s+(\d+\.\d+\.\d+)/.exec(r.out);
-  return m ? m[1] : null;
+/** Archipelago aus der Windows-Programmliste: Version ("Archipelago 0.6.7") und Ordner - nicht jeder hat es unter ProgramData.
+ *  Setzt AP_DIR auf den gefundenen Ordner; {version: null, found: false}, wenn es nirgends liegt. */
+async function apInfo() {
+  const r = await ps("Get-ChildItem 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall' -ErrorAction SilentlyContinue | Get-ItemProperty | Where-Object { $_.DisplayName -like 'Archipelago*' } | ForEach-Object { $_.DisplayName + '|' + $_.InstallLocation + '|' + $_.'Inno Setup: App Path' }");
+  const dirs = [], versions = {};
+  for (const line of r.out.split(/\r?\n/)) {
+    const [name, loc, app] = line.split('|');
+    const v = (/Archipelago\s+(\d+\.\d+\.\d+)/.exec(name || '') || [])[1] || null;
+    for (const d of [loc, app]) if (d && d.trim()) { const dir = d.trim().replace(/[\\/]+$/, ''); dirs.push(dir); versions[dir.toLowerCase()] = v; }
+  }
+  dirs.push('C:\\ProgramData\\Archipelago', path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Archipelago'),
+            path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Archipelago'), path.join(os.homedir(), 'Archipelago'));
+  const dir = dirs.find(d => exists(path.join(d, 'ArchipelagoLauncher.exe')));
+  if (!dir) return { version: null, found: false };
+  AP_DIR = dir;
+  return { version: versions[dir.toLowerCase()] || null, found: true };
 }
+const launcher = () => path.join(AP_DIR, 'ArchipelagoLauncher.exe');
 
 /** Archipelago 0.6.7 da (und nicht älter)? Sonst Installer laden und (mit Admin-Abfrage) still installieren bzw. aktualisieren. */
 async function ensureArchipelago(ctx) {
-  if (exists(path.join(AP_DIR, 'ArchipelagoLauncher.exe'))) {
-    const v = await installedApVersion();
+  const { version: v, found } = await apInfo();
+  if (found) {
     if (!v || !older(v, AP_VERSION)) return;
     ctx.say(`Dein Archipelago ist Version ${v} – für unsere Runden brauchst du ${AP_VERSION}. Ich aktualisiere es …`);
   } else {
@@ -55,8 +66,8 @@ async function ensureArchipelago(ctx) {
   await fsp.writeFile(file, await ctx.download(AP_SETUP));
   ctx.say('Installiere Archipelago – bitte die Windows-Abfrage mit „Ja“ bestätigen …');
   await ps(`Start-Process -FilePath ${psq(file)} -ArgumentList '/SILENT','/SUPPRESSMSGBOXES','/NORESTART' -Verb RunAs -Wait`);
-  if (!exists(path.join(AP_DIR, 'ArchipelagoLauncher.exe'))) throw new Error('Archipelago wurde nicht installiert (Windows-Abfrage abgelehnt?). Bitte nochmal ▶ Spielen.');
-  const after = await installedApVersion();
+  const { version: after, found: ok } = await apInfo();  // der Installer nimmt den alten Ordner, falls es schon mal installiert war
+  if (!ok) throw new Error('Archipelago wurde nicht installiert (Windows-Abfrage abgelehnt?). Bitte nochmal ▶ Spielen.');
   if (after && older(after, AP_VERSION)) throw new Error(`Archipelago ist noch Version ${after} – das Update hat nicht geklappt (Windows-Abfrage abgelehnt?). Bitte nochmal ▶ Spielen.`);
 }
 
@@ -107,6 +118,13 @@ async function writeRound(dir, info, ctx) {
     await fsp.writeFile(path.join(mine, name), data);
   }
   await fsp.writeFile(path.join(mine, 'server.txt'), (info.server || '') + '\r\n');
+  // Die Paket-Skripte haben C:\ProgramData\Archipelago fest drin - auf den Ordner setzen, wo Archipelago wirklich liegt
+  const hv = path.join(dir, 'tools', 'hvik.ps1');
+  if (exists(hv)) {
+    const s = await fsp.readFile(hv, 'utf8');
+    const t = s.replace(/^(\s*ApDir\s*=\s*)"[^"]*"/m, (m, a) => `${a}"${AP_DIR.replace(/"/g, '')}"`);
+    if (t !== s) await fsp.writeFile(hv, t);
+  }
   await fsp.writeFile(path.join(dir, 'name.txt'), info.slot);
 }
 
@@ -199,7 +217,7 @@ function runHidden(dir, script) {
 async function setupSmw(ctx) {
   if (!exists(path.join(AP_DIR, 'host.yaml'))) {  // Archipelago legt seine Einstellungen beim ersten Start an
     ctx.say('Archipelago legt einmal seine Einstellungen an …');
-    detached(LAUNCHER, []);
+    detached(launcher(), []);
     for (let i = 0; i < 30 && !exists(path.join(AP_DIR, 'host.yaml')); i++) await sleep(500);
     await sleep(1500);
     await new Promise(r => execFile('taskkill', ['/IM', 'ArchipelagoLauncher.exe', '/F'], { windowsHide: true }, () => r()));
@@ -259,7 +277,8 @@ function openClient(name, conn) {
   if (!CLIENTS.includes(name)) throw new Error('Unbekannter Client.');
   if (conn && conn.server) lastConn[name] = conn;
   const c = lastConn[name];
-  detached(LAUNCHER, c ? [name, '--', '--connect', c.server, ...(c.slot ? ['--name', c.slot] : [])] : [name]);
+  if (!exists(launcher())) throw new Error('Archipelago nicht gefunden – einmal ▶ Spielen drücken, dann richtet die App es ein.');
+  detached(launcher(), c ? [name, '--', '--connect', c.server, ...(c.slot ? ['--name', c.slot] : [])] : [name]);
 }
 
 const STARTERS = {
@@ -278,7 +297,7 @@ const STARTERS = {
     }
     const apmc = await roundFile(pkg.dir, /\.apmc$/i);
     ctx.say('Starte deinen Archipelago-Minecraft-Server …');
-    detached(LAUNCHER, [apmc]);
+    detached(launcher(), [apmc]);
     const r = await mcap.play({ name: 'HviK Archipelago (dein PC)', ip: 'localhost' }, ctx);
     return { ...r, guide: { title: 'Minecraft – deine eigene Welt', steps: [
       { text: 'Im Fenster „Minecraft Client“ läuft dein eigener Server. Beim allerersten Mal fragt er nach EULA, Java, NeoForge und Mod: alles mit „Ja“ bestätigen. Warten, bis „Server Running“ steht – das Fenster offen lassen.' },
@@ -352,9 +371,10 @@ async function play(info, ctx) {
 
 async function status(info) {
   if (!info.starter) return { ready: false, known: false };
+  const ap = await apInfo();
   let mark = {};
   try { mark = JSON.parse(await fsp.readFile(path.join(ROOT, info.starter.folder, '.hvik-paket.json'), 'utf8')); } catch { /* neu */ }
-  return { known: true, ready: !!mark.setupDone, archipelago: exists(path.join(AP_DIR, 'ArchipelagoLauncher.exe')), folder: path.join(ROOT, info.starter.folder) };
+  return { known: true, ready: !!mark.setupDone, archipelago: ap.found, folder: path.join(ROOT, info.starter.folder) };
 }
 
-module.exports = { play, status, openClient, ROOT };
+module.exports = { play, status, openClient, apInfo, ROOT };
