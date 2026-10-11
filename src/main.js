@@ -275,6 +275,27 @@ ipcMain.handle('ap-open-folder', async (e, folder) => {
   return shell.openPath(target);
 });
 
+// ---------- Nach einem Update: einmal "Neu in Version x.y" mit der Patchnote zeigen ----------
+let whatsNewBusy = false;
+async function showWhatsNew() {
+  const v = app.getVersion();
+  if (whatsNewBusy || loadSettings().seenVersion === v) return;
+  whatsNewBusy = true;
+  try {
+    const hasDialog = await view.webContents.executeJavaScript("typeof hvikAlert === 'function'", true);
+    if (!hasDialog) return;  // z. B. Login-Seite - beim nächsten Laden nochmal
+    const n = await siteGet(`/api/app/notes/${encodeURIComponent(v)}`, true);
+    const notes = n && n.version ? plain(n.notes) : '';
+    const text = (notes || 'Die App ist auf dem neuesten Stand.') + (n && n.date ? `\n\n📅 ${n.date} · 🕒 ${n.time} Uhr` : '') +
+      '\n\nAlle Patchnotes: 📜 oben in der Leiste.';
+    saveSettings({ ...loadSettings(), seenVersion: v });  // vorher merken - so kommt es auch beim Neuladen nur einmal
+    await view.webContents.executeJavaScript(
+      `hvikAlert(${JSON.stringify(text)}, {title: ${JSON.stringify(`Neu in Version ${v}`)}, icon: '✨', ok: 'Alles klar'})`, true);
+  } catch { /* offline o. ä. - nächstes Mal */ } finally {
+    whatsNewBusy = false;
+  }
+}
+
 // ---------- Einstellungen + Fehler melden (Seite /app/einstellungen) ----------
 ipcMain.handle('app-settings', async (e, patch) => {
   if (!fromSite(e)) return null;
@@ -309,6 +330,7 @@ app.whenReady().then(() => {
   createWindow();
   setupUpdates();
   background.start({ win, view, site: SITE, loadSettings, saveSettings, fetchJson: u => siteGet(u, true) });
+  view.webContents.on('did-finish-load', showWhatsNew);
   win.webContents.on('did-finish-load', () => win.webContents.send('game', background.getRunning()));
 });
 app.on('window-all-closed', () => app.quit());
