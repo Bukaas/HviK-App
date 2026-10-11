@@ -14,7 +14,7 @@ const ALLOWED = [/^https:\/\/(www\.)?hvik\.org([/?#]|$)/, /^https:\/\/(\w+\.)?di
 
 nativeTheme.themeSource = 'dark';
 app.setAppUserModelId('org.hvik.app');
-if (!app.requestSingleInstanceLock()) app.quit();
+if (!app.requestSingleInstanceLock()) app.exit(0);  // läuft schon -> sofort raus (die laufende App holt sich nach vorne)
 
 const stateFile = () => path.join(app.getPath('userData'), 'fenster.json');
 function loadBounds() {
@@ -41,6 +41,13 @@ function sendNav() {
 
 function createWindow() {
   const b = loadBounds();
+  // gespeicherte Position nur nehmen, wenn sie noch auf einem Bildschirm liegt (z. B. zweiter Monitor abgesteckt)
+  const { screen } = require('electron');
+  const visible = b.x != null && screen.getAllDisplays().some(d => {
+    const a = d.workArea;
+    return b.x + 100 > a.x && b.x < a.x + a.width - 100 && b.y + 40 > a.y && b.y < a.y + a.height - 40;
+  });
+  if (!visible) { delete b.x; delete b.y; }
   win = new BrowserWindow({
     width: b.width || 1320, height: b.height || 840, x: b.x, y: b.y, minWidth: 940, minHeight: 600,
     title: 'HviK', backgroundColor: '#0d0f13', show: false,
@@ -75,6 +82,8 @@ function createWindow() {
     if (!ALLOWED.some(r => r.test(url))) { e.preventDefault(); shell.openExternal(url); }
   });
   for (const ev of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) wc.on(ev, sendNav);
+  wc.on('found-in-page', (e, r) => win.webContents.send('find-result', { matches: r.matches, active: r.activeMatchOrdinal }));
+  wc.on('did-navigate', () => { if (finding) stopFind(); });
   wc.on('did-finish-load', () => {
     if (firstLoad) { firstLoad = false; view.setVisible(true); win.webContents.send('ready'); }
   });
@@ -106,8 +115,25 @@ function shortcuts(contents) {
     else if (ctrl && (k === '-' || k === 'subtract')) hit(() => v.setZoomLevel(Math.max(v.getZoomLevel() - .5, -3)));
     else if (ctrl && k === '0') hit(() => v.setZoomLevel(0));
     else if (k === 'f12' || (ctrl && i.shift && k === 'i')) hit(() => { if (!app.isPackaged) v.openDevTools({ mode: 'detach' }); });
+    else if (ctrl && k === 'f') hit(() => { win.webContents.focus(); win.webContents.send('find-open'); });
+    else if (k === 'escape' && finding) hit(() => stopFind());
   });
 }
+
+// ---------- Strg+F: Suchen auf der Seite (Suchfeld oben in der Leiste) ----------
+let finding = false;
+function stopFind() {
+  finding = false;
+  view.webContents.stopFindInPage('keepSelection');
+  win.webContents.send('find-close');
+}
+ipcMain.on('find', (e, text, opts) => {
+  if (!view) return;
+  if (!text) { view.webContents.stopFindInPage('clearSelection'); win.webContents.send('find-result', { matches: 0, active: 0 }); return; }
+  finding = true;
+  view.webContents.findInPage(text, { forward: !(opts && opts.back), findNext: !!(opts && opts.next) });
+});
+ipcMain.on('find-stop', () => stopFind());
 
 ipcMain.on('nav-cmd', (e, cmd) => {
   const wc = view.webContents;
@@ -241,6 +267,7 @@ ipcMain.handle('mc-play', async (e, code) => {
     return { ok: true, ...r };
   } catch (err) {
     background.note('fehler', 'Minecraft: ' + err.message);
+    if (err.status === 401) { view.webContents.loadURL(SITE + '/login'); return { ok: false, message: 'Bitte zuerst einloggen.' }; }
     return { ok: false, message: err.message, code: err.code || '' };
   } finally {
     playing = false;
@@ -302,6 +329,7 @@ ipcMain.handle('ap-play', async (e, rid, setupOnly, mode) => {
     return { ok: true, ...r };
   } catch (err) {
     background.note('fehler', 'Archipelago: ' + err.message);
+    if (err.status === 401) { view.webContents.loadURL(SITE + '/login'); return { ok: false, message: 'Bitte zuerst einloggen.' }; }
     return { ok: false, message: err.message };
   } finally {
     apBusy = false;

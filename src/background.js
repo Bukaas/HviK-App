@@ -19,9 +19,8 @@ let tray = null, quitting = false, trayHintShown = false;
 const log = [];            // letzte Meldungen/Fehler für "Fehler melden"
 let running = null;        // gerade gestartetes Spiel {label, icon, url, at}
 let lastGuide = null;      // letzte Anleitung (auch offline abrufbar)
-let online = true, fails = 0, adminOff = false, pollNo = 0;
-const quick = { mc: [], ap: [], next: null };  // für das Schnellstart-Menü im Infobereich
-const remindedTermine = new Set();
+let online = true, fails = 0, pollNo = 0;
+const quick = { mc: [], ap: [], apMine: [], next: null };  // für das Schnellstart-Menü im Infobereich
 
 function settings() {
   const s = ctx.loadSettings();
@@ -43,6 +42,11 @@ function show(url) {
 }
 
 function notify(title, body, url) {
+  // Schaut man gerade genau auf diese Seite, braucht es keine Windows-Benachrichtigung
+  try {
+    const cur = new URL(ctx.view.webContents.getURL()), want = url ? new URL(url, ctx.site) : null;
+    if (want && ctx.win.isVisible() && ctx.win.isFocused() && !ctx.win.isMinimized() && cur.pathname === want.pathname) { note('push (gesehen)', title); return; }
+  } catch { /* egal */ }
   notifyAction(title, body, () => show(url));
 }
 // Windows-Benachrichtigung mit eigener Aktion beim Klick (z. B. Update installieren)
@@ -67,8 +71,9 @@ function setupTray() {
     if (quitting || !settings().tray) return;
     e.preventDefault();
     ctx.win.hide();
-    if (!trayHintShown) {
+    if (!trayHintShown && !ctx.loadSettings().trayHintShown) {  // nur ein einziges Mal (gemerkt)
       trayHintShown = true;
+      ctx.saveSettings({ ...ctx.loadSettings(), trayHintShown: true });
       notify('HviK läuft im Hintergrund weiter', 'Damit du Benachrichtigungen bekommst. Ganz beenden: Rechtsklick auf das HviK-Symbol unten rechts → Beenden.');
     }
   });
@@ -109,14 +114,17 @@ function applyAutostart() {
 }
 
 // ---------- Benachrichtigungen: alle 30 s bei hvik.org nachsehen ----------
-const seen = { mc: null, ap: null, apStatus: {}, bell: null, liga: null, confirms: null, chat: {} };
+const seen = { mc: null, ap: null, apStatus: {}, bell: null, liga: null, confirms: null, chat: {}, chatPrimed: {} };
 async function poll() {
   const s = settings();
   pollNo++;
-  const get = async u => { try { return await ctx.fetchJson(u); } catch { return null; } };
-  // "Wer ist online?" + Verbindung prüfen
+  // EINE Abfrage für alles (Online-Meldung, Lobbys, Runden, Glocke, Liga, Turnier, Termine, Admin, Chat)
+  const chatWanted = {};
+  for (const c of quick.apMine) chatWanted[c.id] = seen.chat[c.id] || 0;
+  let f;
   try {
-    await ctx.postJson('/api/online', { activity: running ? `${running.icon || '🎮'} ${running.label}` : '' });
+    f = await ctx.postJson('/api/app/feed', { activity: running ? `${running.icon || '🎮'} ${running.label}` : '', termine: pollNo % 2 === 1,
+                                               chat: (s.notify.items || s.notify.mentions) ? chatWanted : {} });
     fails = 0;
     if (!online) { online = true; ctx.onNet(true); note('netz', 'wieder verbunden'); }
   } catch (e) {
@@ -131,7 +139,7 @@ async function poll() {
     return;
   }
   // Minecraft-Lobbys
-  const mc = await get('/api/mclink/lobbys');
+  const mc = f.mc;
   if (mc && mc.items) {
     const open = mc.items.filter(c => c.status === 'lobby');
     if (seen.mc && s.notify.lobbys) for (const c of open) if (!seen.mc.has(c.code) && !c.mine)
@@ -140,7 +148,7 @@ async function poll() {
     quick.mc = open;
   }
   // Archipelago-Runden + "deine Runde startet"
-  const ap = await get('/api/archipelago/lobbys');
+  const ap = f.ap;
   if (ap && ap.items) {
     if (seen.ap && s.notify.lobbys) for (const c of ap.items) if (!seen.ap.has(c.id) && c.status === 'lobby' && !c.mine)
       notify('🧩 Neue Archipelago-Runde', `„${c.title}“ – ${c.host} sammelt Mitspieler.`, c.url);
@@ -154,41 +162,40 @@ async function poll() {
     }
     seen.ap = new Set(ap.items.map(c => c.id));
     quick.ap = ap.items.filter(c => c.status === 'lobby' || c.mine);
-    // Chat/Items in meinen laufenden Runden
-    if (s.notify.items || s.notify.mentions) for (const c of ap.items.filter(x => x.mine && x.status === 'running')) await pollChat(c, s);
+    quick.apMine = ap.items.filter(x => x.mine && x.status === 'running');
   }
+  // Chat/Items in meinen laufenden Runden (kommt gleich mit)
+  for (const c of quick.apMine) if (f.chat && f.chat[c.id]) handleChat(c, f.chat[c.id], s);
   // Glocke (festgesteckt, Erfolge)
-  if (s.notify.bell) {
-    const b = await get('/api/glocke');
-    if (b && b.items) {
-      const keys = new Set();
-      for (const it of b.items) {
-        if (it.seen) continue;
-        if (it.kind === 'achievements') {  // jeder Erfolg einzeln merken - sonst ploppen beim nächsten alle nochmal auf
-          for (const a of it.items) {
-            const k = 'ach:' + a.name;
-            keys.add(k);
-            if (seen.bell && !seen.bell.has(k)) {
-              note('erfolg', a.name);
-              toast.show({ kind: 'achievement', icon: a.icon, title: '🏅 Erfolg freigeschaltet', name: a.name, text: a.desc,
-                           foot: `${a.difficulty} · ${a.pct} % der Community haben ihn`, color: a.difficulty, seconds: 7,
-                           buttons: [{ label: 'Ansehen', action: 'open:/profil' }] });
-            }
+  const b = f.bell;
+  if (s.notify.bell && b && b.items) {
+    const keys = new Set();
+    for (const it of b.items) {
+      if (it.seen) continue;
+      if (it.kind === 'achievements') {  // jeder Erfolg einzeln merken - sonst ploppen beim nächsten alle nochmal auf
+        for (const a of it.items) {
+          const k = 'ach:' + a.name;
+          keys.add(k);
+          if (seen.bell && !seen.bell.has(k)) {
+            note('erfolg', a.name);
+            toast.show({ kind: 'achievement', icon: a.icon, title: '🏅 Erfolg freigeschaltet', name: a.name, text: a.desc,
+                         foot: `${a.difficulty} · ${a.pct} % der Community haben ihn`, color: a.difficulty, seconds: 7,
+                         buttons: [{ label: 'Ansehen', action: 'open:/profil' }] });
           }
-          continue;
         }
-        const k = it.key;
-        if (!k) continue;
-        keys.add(k);
-        if (seen.bell && !seen.bell.has(k) && it.kind === 'stuck')
-          notify('🧱 Jemand braucht dich', `${it.who} braucht ${it.item ? '„' + it.item + '“' : 'etwas'} aus deiner Welt (${it.world}).`, it.url);
+        continue;
       }
-      seen.bell = keys;
+      const k = it.key;
+      if (!k) continue;
+      keys.add(k);
+      if (seen.bell && !seen.bell.has(k) && it.kind === 'stuck')
+        notify('🧱 Jemand braucht dich', `${it.who} braucht ${it.item ? '„' + it.item + '“' : 'etwas'} aus deiner Welt (${it.world}).`, it.url);
     }
+    seen.bell = keys;
   }
   // Liga / Turnier: Herausforderungen und Bestätigungen
   if (s.notify.liga) {
-    const l = await get('/api/liga/offen'), cf = await get('/api/bestaetigen');
+    const l = f.liga, cf = f.confirms;
     const keys = new Set([...(l && l.items || []).map(i => `liga:${i.kind}:${i.id}`), ...(cf && cf.items || []).map(i => `perk:${i.tournament_id}:${i.perk_id}`)]);
     if (seen.liga) for (const k of keys) if (!seen.liga.has(k)) {
       if (k.startsWith('liga:challenge')) notify('⚔️ Neue Herausforderung', 'Du wurdest in der Liga herausgefordert.', '/liga');
@@ -199,55 +206,48 @@ async function poll() {
     seen.liga = keys;
   }
   // Turnier: "Dein Match ist bereit" (mit Knöpfen Zum Match / Voice-Kanal)
-  if (s.notify.turnier) {
-    const mm = await get('/api/app/mein-match');
-    if (mm && mm.items) {
-      const keys = new Set(mm.items.map(m => m.key));
-      if (seen.match) for (const m of mm.items) if (!seen.match.has(m.key)) {
-        note('turnier', `Match ${m.number}: ${m.me} vs ${m.opponent}`);
-        toast.show({ kind: 'match', icon: '⚔️', title: `Dein Match ist bereit · ${m.tournament}`, name: `${m.me} vs ${m.opponent}`,
-                     text: `Spiel ${m.number} – viel Erfolg!`, colorHex: '#f4c150', seconds: 25,
-                     buttons: [{ label: '⚔️ Zum Match', action: `open:${m.url}` }, { label: '🔊 In meinen Voice-Kanal', action: `voice:${m.id}:${m.side}` }] });
-      }
-      seen.match = keys;
+  const mm = f.match;
+  if (s.notify.turnier && mm && mm.items) {
+    const keys = new Set(mm.items.map(m => m.key));
+    if (seen.match) for (const m of mm.items) if (!seen.match.has(m.key)) {
+      note('turnier', `Match ${m.number}: ${m.me} vs ${m.opponent}`);
+      toast.show({ kind: 'match', icon: '⚔️', title: `Dein Match ist bereit · ${m.tournament}`, name: `${m.me} vs ${m.opponent}`,
+                   text: `Spiel ${m.number} – viel Erfolg!`, colorHex: '#f4c150', seconds: 25,
+                   buttons: [{ label: '⚔️ Zum Match', action: `open:${m.url}` }, { label: '🔊 In meinen Voice-Kanal', action: `voice:${m.id}:${m.side}` }] });
     }
+    seen.match = keys;
   }
-  // Termine: 15 Minuten vorher erinnern
-  if (pollNo % 2 === 1) {
-    const tm = await get('/api/termine');
-    if (tm && tm.items) {
-      const now = Date.now() / 1000;
-      quick.next = tm.items.find(x => x.at > now) || null;
-      if (s.notify.termine) for (const x of tm.items) {
+  // Termine: 15 Minuten vorher erinnern (erinnerte merken sich die Einstellungen - kein Doppel nach Neustart)
+  const tm = f.termine;
+  if (tm && tm.items) {
+    const now = Date.now() / 1000;
+    quick.next = tm.items.find(x => x.at > now) || null;
+    if (s.notify.termine) {
+      const done = new Set(ctx.loadSettings().reminded || []);
+      for (const x of tm.items) {
         const left = x.at - now;
-        if (left > 0 && left <= 15 * 60 && !remindedTermine.has(x.key)) {
-          remindedTermine.add(x.key);
+        if (left > 0 && left <= 15 * 60 && !done.has(x.key)) {
+          done.add(x.key);
+          ctx.saveSettings({ ...ctx.loadSettings(), reminded: [...done].slice(-50) });
           notify(`${x.icon} In ${Math.max(1, Math.round(left / 60))} Min.: ${x.title}`, `${x.time} Uhr – klick für Details.`, x.url);
         }
       }
     }
   }
-  // Admin-Meldungen (nur für Admins - sonst antwortet hvik.org mit 403 und wir fragen nicht mehr)
-  if (!adminOff && s.notify.admin) {
-    try {
-      const a = await ctx.fetchJson('/api/app/admin');
-      const keys = new Set((a.items || []).map(i => i.key));
-      if (seen.admin) for (const i of a.items || []) if (!seen.admin.has(i.key)) notify(i.title, i.text, i.url);
-      seen.admin = keys;
-    } catch (e) {
-      if (/403/.test(e.message)) adminOff = true;
-    }
+  // Admin-Meldungen (kommen nur für Admins mit)
+  const a = f.admin;
+  if (s.notify.admin && a && a.items) {
+    const keys = new Set(a.items.map(i => i.key));
+    if (seen.admin) for (const i of a.items) if (!seen.admin.has(i.key)) notify(i.title, i.text, i.url);
+    seen.admin = keys;
   }
   updateMenu();
 }
 
-async function pollChat(c, s) {
+function handleChat(c, r, s) {
   const after = seen.chat[c.id];
-  let r;
-  try { r = await ctx.fetchJson(`${c.url}/live?after=${after || 0}`); } catch { return; }
-  if (!r || !r.running || !r.messages) return;
-  const last = r.messages.reduce((m, x) => Math.max(m, x.id || 0), after || 0);
-  if (after != null) for (const m of r.messages) {
+  const last = (r.messages || []).reduce((m, x) => Math.max(m, x.id || 0), after || 0);
+  if (seen.chatPrimed[c.id]) for (const m of r.messages || []) {  // beim ersten Mal nur merken, nicht alles Alte melden
     const text = (m.parts || []).map(p => p.t).join('');
     const item = (m.parts || []).find(p => /^item/.test(p.k));
     if (/^chat$/i.test(m.type || '')) {  // im Chat erwähnt (nicht die eigenen Nachrichten)
@@ -265,6 +265,7 @@ async function pollChat(c, s) {
     }
   }
   seen.chat[c.id] = last;
+  seen.chatPrimed[c.id] = true;
 }
 
 // ---------- "Spiel läuft" ----------

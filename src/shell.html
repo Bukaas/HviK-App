@@ -29,6 +29,12 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-famil
 .guide b{display:block;margin-bottom:8px;} .guide ol{margin:0;padding-left:20px;color:#c9ced8;font-size:13px;display:grid;gap:6px;user-select:text;}
 .guide code{background:#0d0f13;border:1px solid var(--line);border-radius:6px;padding:1px 6px;}
 .splash.offline .guide.has{display:block;}
+.find{-webkit-app-region:no-drag;display:flex;align-items:center;gap:4px;background:#14171e;border:1px solid #39404d;border-radius:8px;padding:2px 4px 2px 8px;}
+.find[hidden]{display:none;}
+.find input{background:transparent;border:0;outline:0;color:var(--text);font:inherit;font-size:12.5px;width:200px;}
+.find span{font-size:11.5px;color:var(--dim);min-width:46px;text-align:right;font-variant-numeric:tabular-nums;}
+.find button{border:0;background:transparent;color:var(--dim);cursor:pointer;font-size:11px;padding:3px 5px;border-radius:5px;}
+.find button:hover{background:#262b36;color:var(--text);}
 .notes:hover{background:#1a1e26;color:var(--text);}
 .prog{position:fixed;top:39px;left:0;height:2px;width:0;background:var(--accent);transition:width .4s ease,opacity .3s;opacity:0;}
 .prog.on{opacity:1;width:70%;transition:width 6s cubic-bezier(.1,.6,.2,1);}
@@ -60,6 +66,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-famil
   <button class="notes" id="b-notes" title="Patchnotes – was ist neu?">📜 Patchnotes</button>
   <button class="notes" id="b-settings" title="Einstellungen &amp; Fehler melden">⚙️</button>
   <div class="title" id="title"></div>
+  <div class="find" id="find" hidden><input id="find-in" placeholder="Auf der Seite suchen …" spellcheck="false"><span id="find-n"></span><button id="find-up" title="Vorheriger (Umschalt+Enter)">▲</button><button id="find-down" title="Nächster (Enter)">▼</button><button id="find-x" title="Schließen (Esc)">✕</button></div>
   <button class="upd" id="upd" hidden></button>
 </div>
 <div class="prog" id="prog"></div>
@@ -107,6 +114,18 @@ shellApi.on('guide', g => {
     if (s.copy) { const c = document.createElement('code'); c.textContent = s.copy; li.append(c); } ol.append(li); });
   box.append(ol);
 });
+const fBox = $('find'), fIn = $('find-in'), fN = $('find-n');
+shellApi.on('find-open', () => { fBox.hidden = false; $('title').hidden = true; fIn.focus(); fIn.select(); if (fIn.value) shellApi.find(fIn.value); });
+shellApi.on('find-close', () => { fBox.hidden = true; $('title').hidden = false; fN.textContent = ''; });
+shellApi.on('find-result', r => { fN.textContent = r.matches ? `${r.active}/${r.matches}` : (fIn.value ? 'keine' : ''); });
+fIn.addEventListener('input', () => shellApi.find(fIn.value));
+fIn.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); shellApi.find(fIn.value, {next: true, back: e.shiftKey}); }
+  else if (e.key === 'Escape') { e.preventDefault(); shellApi.findStop(); }
+});
+$('find-down').onclick = () => shellApi.find(fIn.value, {next: true});
+$('find-up').onclick = () => shellApi.find(fIn.value, {next: true, back: true});
+$('find-x').onclick = () => shellApi.findStop();
 shellApi.on('ready', () => $('splash').className = 'splash hide');
 shellApi.on('loading', () => $('splash').className = 'splash');
 shellApi.on('offline', msg => { $('splash').className = 'splash offline'; });

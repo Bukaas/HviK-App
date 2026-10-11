@@ -39,9 +39,15 @@ async function apply() {
 }
 
 /** Einmal beim Start: Client-ID von hvik.org */
-function start(cfg) {
+async function start(cfg) {
   clientId = cfg && cfg.discord_client_id;
   if (cfg && cfg.logo) logo = cfg.logo;
+  // Ist im Discord Developer Portal ein Bild "logo" hochgeladen, ist das sicherer als ein Link
+  try {
+    const r = await fetch(`https://discord.com/api/v10/oauth2/applications/${clientId}/assets`);
+    const assets = await r.json();
+    if (Array.isArray(assets) && assets.some(a => a.name === 'logo')) logo = 'logo';
+  } catch { /* dann eben der Link */ }
   connect();
 }
 

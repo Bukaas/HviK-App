@@ -32,15 +32,32 @@ function ps(command) {  // PowerShell-Befehl ausführen und warten
 }
 const psq = s => `'${String(s).replace(/'/g, "''")}'`;  // PowerShell-String in einfachen Anführungszeichen
 
-/** Archipelago 0.6.7 da? Sonst Installer laden und (mit Admin-Abfrage) still installieren. */
+const AP_VERSION = '0.6.7';
+const older = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); return false; };
+
+/** Installierte Archipelago-Version aus der Windows-Programmliste ("Archipelago 0.6.7") - null, wenn unbekannt. */
+async function installedApVersion() {
+  const r = await ps("Get-ChildItem 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall' -ErrorAction SilentlyContinue | Get-ItemProperty | Where-Object { $_.DisplayName -like 'Archipelago*' } | ForEach-Object { $_.DisplayName }");
+  const m = /Archipelago\s+(\d+\.\d+\.\d+)/.exec(r.out);
+  return m ? m[1] : null;
+}
+
+/** Archipelago 0.6.7 da (und nicht älter)? Sonst Installer laden und (mit Admin-Abfrage) still installieren bzw. aktualisieren. */
 async function ensureArchipelago(ctx) {
-  if (exists(path.join(AP_DIR, 'ArchipelagoLauncher.exe'))) return;
-  ctx.say('Archipelago fehlt noch – lade den Installer …');
+  if (exists(path.join(AP_DIR, 'ArchipelagoLauncher.exe'))) {
+    const v = await installedApVersion();
+    if (!v || !older(v, AP_VERSION)) return;
+    ctx.say(`Dein Archipelago ist Version ${v} – für unsere Runden brauchst du ${AP_VERSION}. Ich aktualisiere es …`);
+  } else {
+    ctx.say('Archipelago fehlt noch – lade den Installer …');
+  }
   const file = path.join(os.tmpdir(), 'Setup.Archipelago.0.6.7.exe');
   await fsp.writeFile(file, await ctx.download(AP_SETUP));
   ctx.say('Installiere Archipelago – bitte die Windows-Abfrage mit „Ja“ bestätigen …');
   await ps(`Start-Process -FilePath ${psq(file)} -ArgumentList '/SILENT','/SUPPRESSMSGBOXES','/NORESTART' -Verb RunAs -Wait`);
   if (!exists(path.join(AP_DIR, 'ArchipelagoLauncher.exe'))) throw new Error('Archipelago wurde nicht installiert (Windows-Abfrage abgelehnt?). Bitte nochmal ▶ Spielen.');
+  const after = await installedApVersion();
+  if (after && older(after, AP_VERSION)) throw new Error(`Archipelago ist noch Version ${after} – das Update hat nicht geklappt (Windows-Abfrage abgelehnt?). Bitte nochmal ▶ Spielen.`);
 }
 
 /** Starterpaket in "HviK Archipelago\<Ordner>" - einmal laden, bei neuem Release aktualisieren. Eigene Dateien bleiben. */
