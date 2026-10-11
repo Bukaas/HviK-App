@@ -1,6 +1,7 @@
 // HviK Desktop-App: Fenster mit eigener Titelleiste, darin hvik.org (Login über Discord wie auf der Seite).
 const { app, BrowserWindow, WebContentsView, ipcMain, shell, nativeTheme, session, dialog } = require('electron');
 const minecraft = require('./minecraft');
+const archipelago = require('./archipelago');
 const path = require('path');
 const fs = require('fs');
 
@@ -150,6 +151,58 @@ ipcMain.handle('mc-pick-root', async e => {
   if (r.canceled || !r.filePaths[0]) return { ok: false };
   saveSettings({ ...loadSettings(), cfRoot: r.filePaths[0] });
   return { ok: true, path: r.filePaths[0] };
+});
+
+// ---------- Archipelago - nur für Seiten von hvik.org ----------
+async function download(url) {  // öffentliche Dateien (GitHub-Releases)
+  const r = await session.fromPartition('persist:hvik').fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`Download fehlgeschlagen (${r.status}).`);
+  return Buffer.from(await r.arrayBuffer());
+}
+async function downloadNamed(url) {  // eigene Datei von hvik.org (mit Login), Dateiname aus der Antwort
+  const r = await session.fromPartition('persist:hvik').fetch(SITE + url, { cache: 'no-store' });
+  const err = new URL(r.url).searchParams.get('fehler');
+  if (err) throw new Error(err);
+  if (!r.ok || /text\/html/.test(r.headers.get('content-type') || '')) throw new Error('Deine Datei ist gerade nicht abrufbar – gleich nochmal versuchen.');
+  const m = /filename="?([^";]+)"?/.exec(r.headers.get('content-disposition') || '');
+  return { name: path.basename(m ? m[1] : 'datei'), data: Buffer.from(await r.arrayBuffer()) };
+}
+async function roundInfo(rid) {
+  const info = await siteGet(`/api/archipelago/app/${encodeURIComponent(rid)}`, true);
+  if (!info.ok) throw new Error(info.message || 'Runde nicht gefunden.');
+  return info;
+}
+let apBusy = false;
+ipcMain.handle('ap-status', async (e, rid) => {
+  if (!fromSite(e)) return null;
+  try { return { ok: true, ...(await archipelago.status(await roundInfo(rid))) }; }
+  catch (err) { return { ok: false, message: err.message }; }
+});
+ipcMain.handle('ap-play', async (e, rid, setupOnly) => {
+  if (!fromSite(e)) return null;
+  if (apBusy) return { ok: false, message: 'Läuft schon …' };
+  apBusy = true;
+  const say = text => { try { e.sender.send('ap-progress', text); } catch { /* Seite gewechselt */ } };
+  try {
+    say('Hole die Runden-Daten …');
+    const info = { ...(await roundInfo(rid)), setupOnly: !!setupOnly };
+    const pickFile = async (title, ext) => {
+      const r = await dialog.showOpenDialog(win, { title, defaultPath: app.getPath('downloads'), properties: ['openFile'],
+                                                  filters: [{ name: title, extensions: ext }, { name: 'Alle Dateien', extensions: ['*'] }] });
+      return r.canceled ? null : r.filePaths[0];
+    };
+    return { ok: true, ...(await archipelago.play(info, { say, download, downloadNamed, pickFile })) };
+  } catch (err) {
+    return { ok: false, message: err.message };
+  } finally {
+    apBusy = false;
+  }
+});
+ipcMain.handle('ap-open-folder', async (e, folder) => {
+  if (!fromSite(e)) return null;
+  const target = folder && path.resolve(folder).startsWith(archipelago.ROOT) ? folder : archipelago.ROOT;
+  fs.mkdirSync(target, { recursive: true });
+  return shell.openPath(target);
 });
 
 app.on('second-instance', () => {

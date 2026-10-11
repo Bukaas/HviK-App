@@ -10,4 +10,10 @@ contextBridge.exposeInMainWorld('hvikApp', {
     pickFolder: () => ipcRenderer.invoke('mc-pick-root'),
     onProgress: fn => { ipcRenderer.removeAllListeners('mc-progress'); ipcRenderer.on('mc-progress', (e, t) => fn(t)); },
   },
+  ap: {
+    status: rid => ipcRenderer.invoke('ap-status', rid),
+    play: (rid, setupOnly) => ipcRenderer.invoke('ap-play', rid, !!setupOnly),
+    openFolder: folder => ipcRenderer.invoke('ap-open-folder', folder),
+    onProgress: fn => { ipcRenderer.removeAllListeners('ap-progress'); ipcRenderer.on('ap-progress', (e, t) => fn(t)); },
+  },
 });
