@@ -253,9 +253,13 @@ async function roundFile(dir, re) {
 const hostPort = s => String(s || '').replace(':', ' ');
 /** Archipelago-Clients, die die Seite über die Anleitung öffnen darf */
 const CLIENTS = ['KH2 Client', 'Isaac Client', 'SNI Client', 'Text Client'];
-function openClient(name) {
+const lastConn = {};  // Client -> {server, slot}: der Knopf in der Anleitung verbindet dann genauso direkt
+/** Client öffnen - mit conn gleich verbunden (der Launcher reicht alles nach "--" an den Client weiter) */
+function openClient(name, conn) {
   if (!CLIENTS.includes(name)) throw new Error('Unbekannter Client.');
-  detached(LAUNCHER, [name]);
+  if (conn && conn.server) lastConn[name] = conn;
+  const c = lastConn[name];
+  detached(LAUNCHER, c ? [name, '--', '--connect', c.server, ...(c.slot ? ['--name', c.slot] : [])] : [name]);
 }
 
 const STARTERS = {
@@ -301,12 +305,12 @@ const STARTERS = {
   async 'the-binding-of-isaac'(pkg, info, ctx) {
     ctx.say('Starte The Binding of Isaac und den Isaac Client …');
     detached('cmd.exe', ['/c', 'start', '', 'steam://rungameid/250900'], pkg.dir);
-    openClient('Isaac Client');
+    openClient('Isaac Client', { server: info.server, slot: info.slot });
     return { guide: { title: 'The Binding of Isaac', steps: [
-      { text: 'Isaac startet über Steam, der Isaac Client geht auf.' },
-      { text: 'Im Isaac Client oben ins Server-Feld einfügen → Connect:', copy: info.server },
-      { text: 'Fragt er nach deinem Namen:', copy: info.slot },
-      { text: 'Dann nach dem Speicherplatz (1–3): den Spielstand, den du in Isaac benutzt.' },
+      { text: 'Isaac startet über Steam, der Isaac Client geht auf und verbindet sich von selbst mit deiner Runde.' },
+      { text: 'Er fragt nach dem Speicherplatz (1–3): den Spielstand, den du in Isaac benutzt.' },
+      { text: 'Falls er doch nicht verbindet: oben ins Server-Feld einfügen → Connect:', copy: info.server },
+      { text: 'Und als Name:', copy: info.slot },
       { text: 'Im Spiel: Mods-Menü → „The Archipelago of Isaac“ muss an sein → neuen Run starten.' },
       { text: 'Client-Befehle: /savefile 1-3 (Speicherplatz wechseln), /resync (Items neu holen).' },
     ], clients: ['Isaac Client'] } };
@@ -316,15 +320,17 @@ const STARTERS = {
     const seed = await roundFile(pkg.dir, /^AP-.*\.zip$/i);
     const mm = path.join(pkg.dir, 'OpenKH', 'openkh', 'OpenKh.Tools.ModsManager.exe');
     if (!exists(mm)) throw new Error('Der OpenKH Mod Manager fehlt – das Einrichten ist nicht fertig geworden. Nochmal ▶ Spielen.');
-    ctx.say('Öffne den OpenKH Mod Manager …');
+    ctx.say('Öffne den OpenKH Mod Manager und den KH2 Client …');
     detached(mm, []);
+    openClient('KH2 Client', { server: info.server, slot: info.slot });  // verbindet sich gleich mit der Runde und wartet dann auf KH2
     return { guide: { title: 'Kingdom Hearts II', steps: [
       { text: 'Im OpenKH Mod Manager: grünes Plus → „Select and install Mod Archive“ → deine Seed-Datei wählen (Pfad zum Einfügen):', copy: seed },
       { text: 'Die Seed GANZ NACH OBEN schieben. Alte Seeds aus früheren Runden abhaken.' },
       { text: '„Mod Loader“ → „Build and Run“. KH2 startet. Neue Runde = NEUER Spielstand → du landest im Garden of Assemblage.' },
-      { text: 'Wenn du im Garden of Assemblage bist: KH2 Client öffnen (Knopf unten) und oben die Adresse eintragen → Connect:', copy: info.server },
-      { text: 'Fragt er nach deinem Namen:', copy: info.slot },
-      { text: 'Der Client muss die ganze Zeit offen bleiben. „Cannot Open Process“: den Client als Administrator starten.' },
+      { text: 'Der KH2 Client ist schon offen und mit deiner Runde verbunden – sobald du im Garden of Assemblage bist, findet er das Spiel von selbst. Er muss die ganze Zeit offen bleiben.' },
+      { text: 'Client aus Versehen zu? Knopf unten öffnet ihn wieder, gleich verbunden. „Cannot Open Process“: den Client als Administrator starten.' },
+      { text: 'Falls er doch nicht verbindet: oben die Adresse eintragen → Connect:', copy: info.server },
+      { text: 'Und als Name:', copy: info.slot },
     ], clients: ['KH2 Client'] } };
   },
 };
