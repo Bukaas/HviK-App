@@ -208,7 +208,7 @@ ipcMain.handle('mc-play', async (e, code) => {
     say('Hole die Lobby-Daten …');
     const info = await lobbyInfo(code);
     const r = await minecraft.play(info, { say, get: u => siteGet(u, false), settings: loadSettings() });
-    background.setRunning({ label: 'Minecraft (HviK Link)', icon: '⛏️', url: `/games/minecraft/${encodeURIComponent(code)}` });
+    background.setRunning({ label: 'Minecraft (HviK Link)', icon: '⛏️', url: `/games/minecraft/${encodeURIComponent(code)}`, title: info.title, procs: ['javaw.exe'] });
     return { ok: true, ...r };
   } catch (err) {
     background.note('fehler', 'Minecraft: ' + err.message);
@@ -267,7 +267,8 @@ ipcMain.handle('ap-play', async (e, rid, setupOnly, mode) => {
       return r.canceled ? null : r.filePaths[0];
     };
     const r = await archipelago.play(info, { say, download, downloadNamed, pickFile, settings: loadSettings() });
-    if (!r.setupOnly) background.setRunning({ label: info.game.name, icon: info.game.icon, url: `/events/archipelago/runde/${encodeURIComponent(rid)}#anleitung` });
+    if (!r.setupOnly) background.setRunning({ label: info.game.name, icon: info.game.icon, url: `/events/archipelago/runde/${encodeURIComponent(rid)}#anleitung`,
+                                              title: `Archipelago: ${info.title || 'Runde'}`, procs: GAME_PROCS[info.game.slug] || [] });
     if (r.guide) background.setGuide(r.guide);
     return { ok: true, ...r };
   } catch (err) {
@@ -309,20 +310,26 @@ async function showWhatsNew() {
   }
 }
 
+// Woran man erkennt, dass das Spiel läuft (für Spielzeit + "Spiel läuft") - Spiele ohne Eintrag zählen nicht mit
+const GAME_PROCS = { minecraft: ['javaw.exe'], 'super-mario-world': ['snes9x-x64.exe'], 'the-binding-of-isaac': ['isaac-ng.exe'],
+                     'kingdom-hearts-2': ['KINGDOM HEARTS II FINAL MIX.exe'] };
+
 // ---------- Einstellungen + Fehler melden (Seite /app/einstellungen) ----------
 ipcMain.handle('app-settings', async (e, patch) => {
   if (!fromSite(e)) return null;
   if (patch && typeof patch === 'object') {
     const allowed = {};
-    for (const k of ['autostart', 'tray']) if (k in patch) allowed[k] = !!patch[k];
+    for (const k of ['autostart', 'tray', 'discord', 'spielzeit']) if (k in patch) allowed[k] = !!patch[k];
     if (patch.notify && typeof patch.notify === 'object')
       allowed.notify = { ...background.settings().notify, ...Object.fromEntries(Object.entries(patch.notify).map(([k, v]) => [k, !!v])) };
     saveSettings({ ...loadSettings(), ...allowed });
     background.applyAutostart();
+    background.refreshPresence();
   }
   return { ...background.settings(), cfRoot: loadSettings().cfRoot || null, apRoot: archipelago.ROOT };
 });
 ipcMain.handle('app-diag', async e => (fromSite(e) ? background.diag() : null));
+ipcMain.handle('app-test-toast', async e => { if (fromSite(e)) background.testToast(); });
 ipcMain.handle('app-test-notify', async e => {
   if (fromSite(e)) background.notify('🔔 So sehen Benachrichtigungen aus', 'Ein Klick drauf bringt dich zur passenden Seite.', '/app/einstellungen');
 });

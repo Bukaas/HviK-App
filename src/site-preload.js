@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('hvikApp', {
   settings: patch => ipcRenderer.invoke('app-settings', patch || null),
   diag: () => ipcRenderer.invoke('app-diag'),
   testNotify: () => ipcRenderer.invoke('app-test-notify'),
+  testToast: () => ipcRenderer.invoke('app-test-toast'),
   open: which => ipcRenderer.invoke('app-open', which),
   version: (process.argv.find(a => a.startsWith('--hvik-version=')) || '').split('=')[1] || '',
   platform: process.platform,
