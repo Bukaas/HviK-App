@@ -289,8 +289,11 @@ async function download(url) {  // öffentliche Dateien (GitHub-Releases)
 }
 async function downloadNamed(url) {  // eigene Datei von hvik.org (mit Login), Dateiname aus der Antwort
   const r = await session.fromPartition('persist:hvik').fetch(SITE + url, { cache: 'no-store' });
-  const err = new URL(r.url).searchParams.get('fehler');
+  // Leitet hvik.org mit ?fehler=... zurück, steht die Meldung in der Adresse (r.url kann bei Electron leer sein!)
+  let err = null;
+  try { err = r.url ? new URL(r.url).searchParams.get('fehler') : null; } catch { err = null; }
   if (err) throw new Error(err);
+  if (r.status === 401) throw httpError(401);
   if (!r.ok || /text\/html/.test(r.headers.get('content-type') || '')) throw new Error('Deine Datei ist gerade nicht abrufbar – gleich nochmal versuchen.');
   const m = /filename="?([^";]+)"?/.exec(r.headers.get('content-disposition') || '');
   return { name: path.basename(m ? m[1] : 'datei'), data: Buffer.from(await r.arrayBuffer()) };

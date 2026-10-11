@@ -20,6 +20,10 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-famil
 .b button{flex:1;border:1px solid #39404d;background:#1f242e;color:#e8eaf0;border-radius:8px;padding:7px 8px;font-weight:700;font-size:12.5px;cursor:pointer;}
 .b button.p{background:var(--c,#ff4d5e);border-color:var(--c,#ff4d5e);color:#fff;}
 .b button:hover{filter:brightness(1.15);}
+.t.small .row{padding:9px 12px 8px 14px;gap:10px;}
+.t.small .ico{width:46px;height:46px;font-size:1.5rem;border-radius:9px;}
+.t.small .n{font-size:14px;}
+.t.small .d{font-size:12px;max-height:1.35em;}
 .shine{position:absolute;inset:0;background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,.08) 45%,transparent 60%);transform:translateX(-100%);animation:shine 1.4s .4s ease-out;}
 @keyframes in{from{transform:translateX(110%);opacity:0}}
 @keyframes out{to{transform:translateX(110%);opacity:0}}
@@ -32,6 +36,7 @@ const t = JSON.parse(decodeURIComponent(location.hash.slice(1)));
 const COLORS = {leicht: ['#7bd88f', '#13261a'], mittel: ['#4ea8de', '#11202e'], schwer: ['#9b5de5', '#1e1530'], legendär: ['#f4c150', '#2e2410']};
 const [c, cbg] = COLORS[(t.color || '').toLowerCase()] || [t.colorHex || '#ff4d5e', '#2a1418'];
 const box = document.getElementById('t');
+if (t.small) box.classList.add('small');
 box.style.setProperty('--c', c); box.style.setProperty('--cbg', cbg); box.style.setProperty('--out', ((t.seconds || 7) - .45) + 's');
 document.getElementById('ico').textContent = t.icon || '🏅';
 document.getElementById('k').textContent = t.title || '';
@@ -44,10 +49,12 @@ if (!(t.buttons || []).length) b.remove();
 // Ton: kurzer heller Akkord wie bei Steam
 try {
   const ac = new AudioContext(), now = ac.currentTime;
-  (t.kind === 'match' ? [523.25, 659.25, 783.99] : [659.25, 987.77, 1318.5]).forEach((f, i) => {
+  const notes = t.quiet ? [880] : t.kind === 'match' ? [523.25, 659.25, 783.99] : t.small ? [783.99, 1046.5] : [659.25, 987.77, 1318.5];
+  const vol = t.quiet ? .05 : t.small ? .08 : .12;
+  notes.forEach((f, i) => {
     const o = ac.createOscillator(), g = ac.createGain();
     o.type = 'sine'; o.frequency.value = f;
-    g.gain.setValueAtTime(0, now + i * .09); g.gain.linearRampToValueAtTime(.12, now + i * .09 + .02); g.gain.exponentialRampToValueAtTime(.001, now + i * .09 + .6);
+    g.gain.setValueAtTime(0, now + i * .09); g.gain.linearRampToValueAtTime(vol, now + i * .09 + .02); g.gain.exponentialRampToValueAtTime(.001, now + i * .09 + .6);
     o.connect(g).connect(ac.destination); o.start(now + i * .09); o.stop(now + i * .09 + .65);
   });
 } catch (e) { /* ohne Ton */ }

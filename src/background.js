@@ -9,7 +9,8 @@ const os = require('os');
 const DEFAULTS = {
   autostart: false,   // Autostart mit Windows: aus, nur in den Einstellungen anschaltbar
   tray: true,         // Schließen = im Hintergrund weiterlaufen (für Benachrichtigungen)
-  notify: { lobbys: true, round: true, items: true, mentions: true, bell: true, liga: true, termine: true, admin: true, turnier: true },
+  notify: { lobbys: true, round: true, items: true, mentions: true, bell: true, liga: true, termine: true, admin: true, turnier: true,
+            spieler: true, hints: true, ziel: true, online: true },
   discord: true,       // Discord-Status, solange ein Spiel läuft
   spielzeit: true,     // Spielzeit mitzählen
 };
@@ -114,7 +115,8 @@ function applyAutostart() {
 }
 
 // ---------- Benachrichtigungen: alle 30 s bei hvik.org nachsehen ----------
-const seen = { mc: null, ap: null, apStatus: {}, bell: null, liga: null, confirms: null, chat: {}, chatPrimed: {} };
+const seen = { mc: null, ap: null, apStatus: {}, bell: null, liga: null, confirms: null, chat: {}, chatPrimed: {}, hints: new Set(), online: null };
+const lastOnline = {};  // user_id -> zuletzt online gesehen (ms) - "ist online" nur nach mind. 10 Min. Pause
 async function poll() {
   const s = settings();
   pollNo++;
@@ -137,6 +139,18 @@ async function poll() {
     if (++fails >= 2 && online) { online = false; ctx.onNet(false); note('netz', 'keine Verbindung: ' + e.message); }
     updateMenu();
     return;
+  }
+  // Wer kommt online? (kleiner Toast, nur wenn jemand mind. 10 Minuten weg war)
+  if (Array.isArray(f.online)) {
+    const now = Date.now();
+    for (const u of f.online) {
+      const before = lastOnline[u.id];
+      if (seen.online && s.notify.online && (!before || now - before > 10 * 60 * 1000))
+        toast.show({ kind: 'info', small: true, quiet: true, icon: '🟢', title: 'HviK Community', name: `${u.name} ist online`,
+                     text: u.activity ? `🎮 ${u.activity}` : '', colorHex: '#43b581', seconds: 5 });
+      lastOnline[u.id] = now;
+    }
+    seen.online = true;
   }
   // Minecraft-Lobbys
   const mc = f.mc;
@@ -250,6 +264,27 @@ function handleChat(c, r, s) {
   if (seen.chatPrimed[c.id]) for (const m of r.messages || []) {  // beim ersten Mal nur merken, nicht alles Alte melden
     const text = (m.parts || []).map(p => p.t).join('');
     const item = (m.parts || []).find(p => /^item/.test(p.k));
+    // jemand startet seine Welt (nur echte Spiele - keine Website-/Tracker-Verbindungen, nicht man selbst)
+    const join = /^(.+?) \(Team #\d+\) playing (.+?) has joined/.exec(text);
+    if (m.type === 'Join') {
+      if (join && s.notify.spieler && join[1] !== r.me && !/TextOnly|Tracker|HintGame/.test(text))
+        toast.show({ kind: 'info', small: true, quiet: true, icon: '🟢', title: `Im Spiel · ${c.title}`, name: `${join[1]} ist im Spiel`,
+                     text: join[2], colorHex: '#7bd88f', seconds: 6, buttons: [] });
+      continue;
+    }
+    const goal = /^(.+?) \(Team #\d+\) has completed their goal/.exec(text);
+    if (m.type === 'Goal' && goal) {
+      if (s.notify.ziel) toast.show({ kind: 'info', icon: '🏁', title: `Ziel erreicht · ${c.title}`, name: `${goal[1]} hat sein Ziel geschafft!`,
+                                      text: goal[1] === r.me ? 'Glückwunsch! 🎉' : 'Gut gemacht!', colorHex: '#f4c150', seconds: 8 });
+      continue;
+    }
+    if (m.type === 'Release' || m.type === 'Collect') {
+      const who = (/^(.+?) \(Team/.exec(text) || [])[1] || 'Jemand';
+      if (s.notify.ziel) toast.show({ kind: 'info', small: true, quiet: true, icon: m.type === 'Release' ? '📤' : '📥', title: c.title,
+                                      name: m.type === 'Release' ? `${who} hat seine Welt freigegeben` : `${who} hat seine Items eingesammelt`,
+                                      text: m.type === 'Release' ? 'Alle Items daraus sind verschickt.' : '', colorHex: '#9b5de5', seconds: 6 });
+      continue;
+    }
     if (/^chat$/i.test(m.type || '')) {  // im Chat erwähnt (nicht die eigenen Nachrichten)
       const me = String(r.me || '').toLowerCase();
       if (me && s.notify.mentions && text.toLowerCase().includes(me) && !text.toLowerCase().startsWith(me + ':'))
@@ -265,6 +300,17 @@ function handleChat(c, r, s) {
     }
   }
   seen.chat[c.id] = last;
+  // Hints, die mich betreffen: mein Item liegt irgendwo / jemand braucht etwas aus meiner Welt
+  for (const h of r.hints || []) {
+    const k = `${c.id}:${h.key}`;
+    if (seen.hints.has(k)) continue;
+    seen.hints.add(k);
+    if (!seen.chatPrimed[c.id] || !s.notify.hints) continue;
+    const mine = h.receiver === r.me;
+    toast.show({ kind: 'info', icon: '💡', title: `Hint · ${c.title}`, name: mine ? `Dein ${h.item}` : `${h.receiver} braucht ${h.item}`,
+                 text: mine ? `liegt bei ${h.finder}: ${h.location}` : `aus deiner Welt: ${h.location}`, colorHex: '#ffd166', seconds: 10,
+                 buttons: [{ label: 'Zur Runde', action: `open:${c.url}` }] });
+  }
   seen.chatPrimed[c.id] = true;
 }
 
