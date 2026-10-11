@@ -82,6 +82,8 @@ function createWindow() {
     view.setVisible(false);
     firstLoad = true;
     win.webContents.send('offline', desc);
+    win.webContents.send('guide', background.getGuide());
+    setTimeout(() => { if (firstLoad) { win.webContents.send('loading'); view.webContents.loadURL(SITE); } }, 15000);  // von selbst nochmal versuchen
   });
   wc.loadURL(SITE);
 }
@@ -176,6 +178,16 @@ async function siteGet(url, json) {
   if (!r.ok) throw new Error(`hvik.org antwortet nicht (${r.status}).`);
   return json ? r.json() : Buffer.from(await r.arrayBuffer());
 }
+async function sitePost(url, body) {
+  const r = await session.fromPartition('persist:hvik').fetch(SITE + url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}), cache: 'no-store' });
+  if (!r.ok) throw new Error(`hvik.org antwortet nicht (${r.status}).`);
+  return r.json();
+}
+// Verbindung weg/wieder da: Leiste oben zeigt es an; kam die Seite nicht, wird sie neu geladen
+function onNet(ok) {
+  if (win) win.webContents.send('net', ok);
+  if (ok && firstLoad) { win.webContents.send('loading'); view.webContents.loadURL(SITE); }
+}
 async function lobbyInfo(code) {
   const info = await siteGet(`/api/mclink/app/${encodeURIComponent(code)}`, true);
   if (!info.ok) throw new Error(info.message || 'Lobby nicht gefunden.');
@@ -256,6 +268,7 @@ ipcMain.handle('ap-play', async (e, rid, setupOnly, mode) => {
     };
     const r = await archipelago.play(info, { say, download, downloadNamed, pickFile, settings: loadSettings() });
     if (!r.setupOnly) background.setRunning({ label: info.game.name, icon: info.game.icon, url: `/events/archipelago/runde/${encodeURIComponent(rid)}#anleitung` });
+    if (r.guide) background.setGuide(r.guide);
     return { ok: true, ...r };
   } catch (err) {
     background.note('fehler', 'Archipelago: ' + err.message);
@@ -329,7 +342,7 @@ app.on('second-instance', () => {
 app.whenReady().then(() => {
   createWindow();
   setupUpdates();
-  background.start({ win, view, site: SITE, loadSettings, saveSettings, fetchJson: u => siteGet(u, true) });
+  background.start({ win, view, site: SITE, loadSettings, saveSettings, fetchJson: u => siteGet(u, true), postJson: sitePost, onNet });
   view.webContents.on('did-finish-load', showWhatsNew);
   win.webContents.on('did-finish-load', () => win.webContents.send('game', background.getRunning()));
 });

@@ -24,6 +24,11 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-famil
 .game{-webkit-app-region:no-drag;border:1px solid #2e7d32;background:rgba(46,125,50,.16);color:#cfe9d0;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis;}
 .game:hover{background:#2e7d32;color:#fff;}
 .game-x{-webkit-app-region:no-drag;border:0;background:transparent;color:var(--dim);cursor:pointer;font-size:11px;padding:4px;margin-left:-4px;}
+.net{-webkit-app-region:no-drag;border:1px solid #b8862f;background:rgba(255,193,7,.12);color:#ffd166;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;white-space:nowrap;}
+.guide{display:none;max-width:560px;margin:18px auto 0;text-align:left;background:#14171e;border:1px solid var(--line);border-radius:14px;padding:14px 16px;}
+.guide b{display:block;margin-bottom:8px;} .guide ol{margin:0;padding-left:20px;color:#c9ced8;font-size:13px;display:grid;gap:6px;user-select:text;}
+.guide code{background:#0d0f13;border:1px solid var(--line);border-radius:6px;padding:1px 6px;}
+.splash.offline .guide.has{display:block;}
 .notes:hover{background:#1a1e26;color:var(--text);}
 .prog{position:fixed;top:39px;left:0;height:2px;width:0;background:var(--accent);transition:width .4s ease,opacity .3s;opacity:0;}
 .prog.on{opacity:1;width:70%;transition:width 6s cubic-bezier(.1,.6,.2,1);}
@@ -50,6 +55,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-famil
     <button id="b-reload" title="Neu laden">⟳</button>
     <button id="b-home" title="Startseite">⌂</button>
   </div>
+  <span class="net" id="net" hidden>⚠ Keine Verbindung – verbinde neu …</span>
   <button class="game" id="b-game" hidden title="Anleitung zum laufenden Spiel öffnen"></button><button class="game-x" id="b-game-x" hidden title="Ausblenden">✕</button>
   <button class="notes" id="b-notes" title="Patchnotes – was ist neu?">📜 Patchnotes</button>
   <button class="notes" id="b-settings" title="Einstellungen &amp; Fehler melden">⚙️</button>
@@ -61,7 +67,8 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-famil
   <div>
     <img src="icon.png" alt="">
     <div class="load"><h1>HviK Community</h1><p>Verbinde mit hvik.org …</p></div>
-    <div class="err"><h1>Keine Verbindung</h1><p id="err-msg">hvik.org ist gerade nicht erreichbar.</p><button id="b-retry">Nochmal versuchen</button></div>
+    <div class="err"><h1>Keine Verbindung</h1><p id="err-msg">hvik.org ist gerade nicht erreichbar – ich versuche es gleich von selbst nochmal.</p><button id="b-retry">Nochmal versuchen</button>
+      <div class="guide" id="guide"></div></div>
   </div>
 </div>
 <script>
@@ -87,6 +94,18 @@ shellApi.on('game', g => {
   const b = $('b-game'), x = $('b-game-x');
   b.hidden = x.hidden = !g;
   if (g) b.textContent = `${g.icon || '🎮'} ${g.label} läuft · 📋 Anleitung`;
+});
+shellApi.on('net', ok => { $('net').hidden = !!ok; });
+shellApi.on('guide', g => {
+  const box = $('guide');
+  box.className = 'guide' + (g ? ' has' : '');
+  if (!g) return;
+  box.replaceChildren();
+  const t = document.createElement('b'); t.textContent = '📋 Deine letzte Anleitung: ' + (g.title || ''); box.append(t);
+  const ol = document.createElement('ol');
+  (g.steps || []).forEach(s => { const li = document.createElement('li'); li.textContent = s.text + ' ';
+    if (s.copy) { const c = document.createElement('code'); c.textContent = s.copy; li.append(c); } ol.append(li); });
+  box.append(ol);
 });
 shellApi.on('ready', () => $('splash').className = 'splash hide');
 shellApi.on('loading', () => $('splash').className = 'splash');

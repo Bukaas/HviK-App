@@ -1,7 +1,7 @@
 {
   "name": "hvik-app",
   "productName": "HviK",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "HviK Community – Desktop-App",
   "main": "src/main.js",
   "private": true,
@@ -52,9 +52,10 @@
       "perMachine": false,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "HviK",
+      "shortcutName": "HviK Community App",
       "deleteAppDataOnUninstall": false,
-      "runAfterFinish": true
+      "runAfterFinish": true,
+      "uninstallDisplayName": "HviK Community App"
     },
     "publish": [
       {
