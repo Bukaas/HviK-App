@@ -372,7 +372,7 @@ async function showWhatsNew() {
 
 // Woran man erkennt, dass das Spiel läuft (für Spielzeit + "Spiel läuft") - Spiele ohne Eintrag zählen nicht mit
 const GAME_PROCS = { minecraft: ['javaw.exe'], 'super-mario-world': ['snes9x-x64.exe'], 'the-binding-of-isaac': ['isaac-ng.exe'],
-                     'kingdom-hearts-2': ['KINGDOM HEARTS II FINAL MIX.exe'] };
+                     'kingdom-hearts-2': ['KINGDOM HEARTS II FINAL MIX.exe'], 'super-mario-64': ['sm64.us.f3dex2e.exe', 'sm64.jp.f3dex2e.exe'] };
 
 // ---------- Einstellungen + Fehler melden (Seite /app/einstellungen) ----------
 ipcMain.handle('app-settings', async (e, patch) => {

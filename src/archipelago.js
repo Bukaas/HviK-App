@@ -212,7 +212,7 @@ function runConsole(dir, title, inner, wait) {
 }
 
 // Einrichten ohne Fenster: Skripte ohne Rückfragen laufen unsichtbar, SMW macht die App selbst
-const SILENT_SETUP = new Set(['minecraft', 'the-binding-of-isaac']);
+const SILENT_SETUP = new Set(['minecraft', 'the-binding-of-isaac', 'super-mario-64']);
 function runHidden(dir, script, env) {
   return new Promise(res => execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script],
     { cwd: dir, windowsHide: true, maxBuffer: 4 << 20, env: { ...process.env, ...(env || {}) } },
@@ -284,6 +284,7 @@ async function setup(pkg, info, ctx) {
       }
     }
     pkg.mark.setupDone = new Date().toISOString();
+    pkg.justSetup = true;  // gerade eben eingerichtet (z. B. Mario 64: Launcher ist schon offen)
     await fsp.writeFile(pkg.markFile, JSON.stringify(pkg.mark, null, 2));
     return;
   }
@@ -300,6 +301,7 @@ async function setup(pkg, info, ctx) {
   const result = exists(code) ? (await fsp.readFile(code, 'utf8')).trim() : '';
   if (result !== '0') throw new Error('Das Einrichten ist nicht fertig geworden – Meldung im Fenster lesen und nochmal ▶ Spielen.');
   pkg.mark.setupDone = new Date().toISOString();
+  pkg.justSetup = true;  // gerade eben eingerichtet (z. B. Mario 64: Launcher ist schon offen)
   await fsp.writeFile(pkg.markFile, JSON.stringify(pkg.mark, null, 2));
 }
 
@@ -361,6 +363,34 @@ async function ensureApworld(info, ctx) {
   await fsp.writeFile(target, await ctx.download(w.url));
 }
 
+/** Datei per Name-Muster suchen (ein paar Ebenen tief) */
+async function findFile(dir, re, depth) {
+  let entries;
+  try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return null; }
+  for (const e of entries) if (e.isFile() && re.test(e.name)) return path.join(dir, e.name);
+  if (depth > 0) for (const e of entries) if (e.isDirectory()) {
+    const f = await findFile(path.join(dir, e.name), re, depth - 1);
+    if (f) return f;
+  }
+  return null;
+}
+
+/** Fertig gebautes Mario 64 aus der Build-Liste des SM64AP-Launchers (SM64APLauncher_config.json neben dem Launcher).
+ *  Spiel: <directory>/<Name>/build/<us|jp>_pc/sm64.<us|jp>.f3dex2e.exe - der zuletzt gebaute gewinnt. */
+async function sm64Build(launcherDir) {
+  let cfg;
+  try { cfg = JSON.parse(await fsp.readFile(path.join(launcherDir, 'SM64APLauncher_config.json'), 'utf8')); } catch { return null; }
+  const found = [];
+  for (const [name, b] of Object.entries(cfg.builds || {})) {
+    const region = String(b.region || '').toUpperCase() === 'JP' ? 'jp' : 'us';
+    const exe = path.join(b.directory || '', name, 'build', `${region}_pc`, `sm64.${region}.f3dex2e.exe`);
+    try { found.push({ name, exe, time: (await fsp.stat(exe)).mtimeMs }); } catch { /* noch nicht gebaut */ }
+  }
+  if (!found.length) return null;
+  found.sort((a, b) => b.time - a.time);
+  return { ...found[0], msys: cfg.msys_path || 'C:\\msys64' };
+}
+
 const STARTERS = {
   /** Minecraft: eigene Welt = Archipelago-Server auf dem eigenen PC (Archipelago-Client) - oder der zugeteilte HviK-Server.
    *  Gespielt wird mit dem CurseForge-Profil mit Shadern + JEI, der Server steht schon in der Serverliste. */
@@ -413,6 +443,38 @@ const STARTERS = {
       { text: 'Im Spiel: Mods-Menü → „The Archipelago of Isaac“ muss an sein → neuen Run starten.' },
       { text: 'Client-Befehle: /savefile 1-3 (Speicherplatz wechseln), /resync (Items neu holen).' },
     ], clients: ['Isaac Client'] } };
+  },
+
+  /** Super Mario 64: der SM64AP-Launcher baut einmalig aus der eigenen ROM ein PC-Spiel (sm64ex). Danach startet die App
+   *  das gebaute Spiel direkt mit Name + Adresse - es verbindet sich von selbst. */
+  async 'super-mario-64'(pkg, info, ctx) {
+    const launcherExe = await findFile(path.join(pkg.dir, 'SM64AP-Launcher'), /^SM64AP.*Launcher.*\.exe$/i, 3);
+    if (!launcherExe) throw new Error('Der SM64AP-Launcher fehlt – das Einrichten ist nicht fertig geworden. Nochmal ▶ Spielen.');
+    const build = await sm64Build(path.dirname(launcherExe));
+    if (build) {
+      ctx.say(`Starte Super Mario 64 (${build.name}) …`);
+      // wie der Launcher: Spiel aus seinem Ordner, mit den MSYS2-Bibliotheken (SDL2 usw.) im Pfad
+      const env = { ...process.env, PATH: `${path.join(build.msys, 'mingw64', 'bin')};${process.env.PATH || ''}` };
+      spawn(build.exe, ['--sm64ap_name', info.slot, '--sm64ap_ip', info.server],
+            { cwd: path.dirname(build.exe), env, detached: true, stdio: 'ignore' }).unref();
+      return { guide: { title: 'Super Mario 64', steps: [
+        { text: 'Mario 64 startet und verbindet sich von selbst mit deiner Runde – einfach spielen!' },
+        { text: 'Falls er nicht verbindet: im Launcher deinen Build wählen und als Launch Options eintragen, dann Play:',
+          copy: `--sm64ap_name ${info.slot} --sm64ap_ip ${info.server}` },
+        { text: 'Sterne sind Checks: jeder Stern, den du holst, schickt etwas los – und Schlüssel, Kappen und Kanonen kommen von den anderen.' },
+      ] } };
+    }
+    if (!pkg.justSetup) {  // beim Einrichten hat das Skript ihn schon geöffnet
+      ctx.say('Öffne den SM64AP-Launcher – das Spiel muss einmal gebaut werden …');
+      detached(launcherExe, []);
+    }
+    return { guide: { title: 'Super Mario 64 – einmal das Spiel bauen', steps: [
+      { text: 'Du brauchst eine eigene Super Mario 64 ROM: USA oder Japan als .z64 (EU geht nicht).' },
+      { text: 'Im SM64AP-Launcher: „Requirements and Debugging“ → fehlende Werkzeuge (MSYS2) installieren lassen und „Register SM64 ROM“ → deine ROM wählen.' },
+      { text: '„Compile default SM64AP build“ → Browse → einen Ordner OHNE Leerzeichen, z. B.:', copy: 'C:\\SM64AP' },
+      { text: 'Einen Namen eingeben → „Download Files“ → „Create Build“. Beim ersten Mal dauert das 10–30 Minuten.' },
+      { text: 'Wenn der Build fertig ist: Launcher schließen und hier nochmal ▶ Spielen – ab dann startet Mario 64 direkt und verbindet sich von selbst.' },
+    ] } };
   },
 
   async 'kingdom-hearts-2'(pkg, info, ctx) {
