@@ -1,5 +1,6 @@
 // HviK Desktop-App: Fenster mit eigener Titelleiste, darin hvik.org (Login über Discord wie auf der Seite).
-const { app, BrowserWindow, WebContentsView, ipcMain, shell, nativeTheme } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, shell, nativeTheme, session, dialog } = require('electron');
+const minecraft = require('./minecraft');
 const path = require('path');
 const fs = require('fs');
 
@@ -106,6 +107,50 @@ function setupUpdates() {
   check();
   setInterval(check, 2 * 60 * 60 * 1000);
 }
+
+// ---------- HviK Link (Minecraft) - nur für Seiten von hvik.org ----------
+const settingsFile = () => path.join(app.getPath('userData'), 'einstellungen.json');
+function loadSettings() { try { return JSON.parse(fs.readFileSync(settingsFile(), 'utf8')); } catch { return {}; } }
+function saveSettings(s) { fs.writeFileSync(settingsFile(), JSON.stringify(s, null, 2)); }
+const fromSite = e => { try { return new URL(e.senderFrame.url).origin === new URL(SITE).origin; } catch { return false; } };
+async function siteGet(url, json) {
+  const r = await session.fromPartition('persist:hvik').fetch(url.startsWith('http') ? url : SITE + url, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`hvik.org antwortet nicht (${r.status}).`);
+  return json ? r.json() : Buffer.from(await r.arrayBuffer());
+}
+async function lobbyInfo(code) {
+  const info = await siteGet(`/api/mclink/app/${encodeURIComponent(code)}`, true);
+  if (!info.ok) throw new Error(info.message || 'Lobby nicht gefunden.');
+  return info;
+}
+let playing = false;
+ipcMain.handle('mc-status', async (e, code) => {
+  if (!fromSite(e)) return null;
+  try { return { ok: true, ...(await minecraft.status(await lobbyInfo(code), loadSettings())) }; }
+  catch (err) { return { ok: false, message: err.message }; }
+});
+ipcMain.handle('mc-play', async (e, code) => {
+  if (!fromSite(e)) return null;
+  if (playing) return { ok: false, message: 'Läuft schon …' };
+  playing = true;
+  const say = text => { try { e.sender.send('mc-progress', text); } catch { /* Seite gewechselt */ } };
+  try {
+    say('Hole die Lobby-Daten …');
+    const info = await lobbyInfo(code);
+    return { ok: true, ...(await minecraft.play(info, { say, get: u => siteGet(u, false), settings: loadSettings() })) };
+  } catch (err) {
+    return { ok: false, message: err.message, code: err.code || '' };
+  } finally {
+    playing = false;
+  }
+});
+ipcMain.handle('mc-pick-root', async e => {
+  if (!fromSite(e)) return null;
+  const r = await dialog.showOpenDialog(win, { title: 'CurseForge-Ordner „Instances“ wählen (CurseForge: Einstellungen → Minecraft)', properties: ['openDirectory'] });
+  if (r.canceled || !r.filePaths[0]) return { ok: false };
+  saveSettings({ ...loadSettings(), cfRoot: r.filePaths[0] });
+  return { ok: true, path: r.filePaths[0] };
+});
 
 app.on('second-instance', () => {
   if (!win) return;
