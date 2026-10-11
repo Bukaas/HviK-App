@@ -293,10 +293,10 @@ async function setup(pkg, info, ctx) {
   const viaPs = exists(path.join(pkg.dir, 'tools', 'einrichten.ps1'));
   await runConsole(pkg.dir, `HviK Archipelago - ${info.game.name} einrichten`, viaPs ? [
     'powershell -NoProfile -ExecutionPolicy Bypass -File "tools\\einrichten.ps1"',
-    'set CODE=%errorlevel%', 'echo %CODE%> .hvik-einrichten-code.txt', 'echo.',
+    'set CODE=%errorlevel%', '>.hvik-einrichten-code.txt echo %CODE%', 'echo.',
     'if "%CODE%"=="0" (echo  Fertig eingerichtet - Fenster schliessen, dann geht es weiter.) else (echo  Da hat etwas nicht geklappt - Meldung oben lesen.)',
     'pause',
-  ] : ['call EINRICHTEN.bat', 'echo %errorlevel%> .hvik-einrichten-code.txt'], true);
+  ] : ['call EINRICHTEN.bat', '>.hvik-einrichten-code.txt echo %errorlevel%'], true);
   const result = exists(code) ? (await fsp.readFile(code, 'utf8')).trim() : '';
   if (result !== '0') throw new Error('Das Einrichten ist nicht fertig geworden – Meldung im Fenster lesen und nochmal ▶ Spielen.');
   pkg.mark.setupDone = new Date().toISOString();
