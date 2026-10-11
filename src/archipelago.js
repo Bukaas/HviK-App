@@ -363,6 +363,27 @@ async function ensureApworld(info, ctx) {
   await fsp.writeFile(target, await ctx.download(w.url));
 }
 
+/** Läuft noch ein Archipelago-Minecraft-Server (Java aus "Minecraft AP Server Directory")? Mit der Welt dieser Runde
+ *  -> 'gleich' (in Ruhe lassen). Mit einer alten Welt -> beenden, sonst belegt er den Port und man landet in der alten Welt. */
+async function mcServerRunning(world) {
+  const r = await ps("Get-CimInstance Win32_Process -Filter \"name like 'java%'\" | Where-Object { $_.CommandLine -match 'AP Server Directory' } | ForEach-Object { $_.ProcessId }");
+  const pids = r.out.split(/\r?\n/).map(x => parseInt(x, 10)).filter(Boolean);
+  if (!pids.length) return 'keiner';
+  // welche Welt der laufende Server hat: level-name in server.properties (wird erst beim nächsten Start überschrieben)
+  let current = null;
+  const base = path.join(AP_DIR, 'Minecraft AP Server Directory');
+  for (const d of await fsp.readdir(base).catch(() => [])) {
+    try {
+      const m = /^level-name=(.*)$/m.exec(await fsp.readFile(path.join(base, d, 'server.properties'), 'utf8'));
+      if (m) current = m[1].trim();
+    } catch { /* kein Server-Ordner */ }
+  }
+  if (world && current === world) return 'gleich';
+  for (const pid of pids) try { process.kill(pid); } catch { /* schon weg */ }
+  await sleep(3000);  // Port frei werden lassen
+  return 'beendet';
+}
+
 /** Datei per Name-Muster suchen (ein paar Ebenen tief) */
 async function findFile(dir, re, depth) {
   let entries;
@@ -425,8 +446,14 @@ const STARTERS = {
       ] } };
     }
     const apmc = await roundFile(pkg.dir, /\.apmc$/i);
-    ctx.say('Starte deinen Archipelago-Minecraft-Server …');
-    detached(launcher(), [apmc]);
+    const seed = (/^AP_(\d+)_P(\d+)_/i.exec(path.basename(apmc)) || []);
+    const world = seed[1] ? `Archipelago-${seed[1]}-P${seed[2]}` : null;
+    if (await mcServerRunning(world) === 'gleich') {
+      ctx.say('Dein Minecraft-Server für diese Runde läuft schon …');
+    } else {
+      ctx.say('Starte deinen Archipelago-Minecraft-Server …');
+      detached(launcher(), [apmc]);
+    }
     const r = await mcap.play({ name: 'HviK Archipelago (dein PC)', ip: 'localhost' }, ctx);
     return { ...r, guide: { title: 'Minecraft – deine eigene Welt', steps: [
       { text: 'Im Fenster „Minecraft Client“ läuft dein eigener Server. Beim allerersten Mal fragt er nach EULA, Java, NeoForge und Mod: alles mit „Ja“ bestätigen. Warten, bis „Server Running“ steht – das Fenster offen lassen.' },
