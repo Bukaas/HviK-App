@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:">
+<title>HviK</title>
+<style>
+:root{--bg:#0d0f13;--bar:#0d0f13;--line:#1f232c;--text:#e8eaf0;--dim:#8b92a1;--accent:#ff4d5e;}
+*{box-sizing:border-box;}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:"Segoe UI",system-ui,sans-serif;overflow:hidden;user-select:none;}
+.bar{position:fixed;inset:0 0 auto 0;height:40px;display:flex;align-items:center;gap:6px;padding:0 150px 0 12px;
+  background:var(--bar);border-bottom:1px solid var(--line);-webkit-app-region:drag;}
+.brand{display:flex;align-items:center;gap:8px;font-weight:800;letter-spacing:.02em;font-size:14px;margin-right:10px;}
+.brand img{width:20px;height:20px;}
+.nav{display:flex;gap:2px;-webkit-app-region:no-drag;}
+.nav button{width:30px;height:28px;border:0;border-radius:7px;background:transparent;color:var(--dim);font-size:15px;cursor:pointer;display:grid;place-items:center;}
+.nav button:hover:not(:disabled){background:#1a1e26;color:var(--text);}
+.nav button:disabled{opacity:.3;cursor:default;}
+.title{flex:1;text-align:center;font-size:12.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.upd{-webkit-app-region:no-drag;border:1px solid #2e7d32;background:rgba(46,125,50,.18);color:#cfe9d0;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
+.upd:hover{background:#2e7d32;color:#fff;}
+.upd.busy{cursor:default;border-color:#3a4150;background:transparent;color:var(--dim);}
+.prog{position:fixed;top:39px;left:0;height:2px;width:0;background:var(--accent);transition:width .4s ease,opacity .3s;opacity:0;}
+.prog.on{opacity:1;width:70%;transition:width 6s cubic-bezier(.1,.6,.2,1);}
+.prog.done{opacity:0;width:100%;transition:width .2s,opacity .4s .2s;}
+.splash{position:fixed;inset:40px 0 0 0;display:grid;place-items:center;text-align:center;}
+.splash img{width:84px;height:84px;filter:drop-shadow(0 0 30px rgba(255,77,94,.35));animation:pulse 1.6s ease-in-out infinite;}
+.splash h1{margin:18px 0 6px;font-size:22px;letter-spacing:.03em;}
+.splash p{margin:0;color:var(--dim);font-size:14px;}
+.splash button{margin-top:18px;padding:9px 18px;border-radius:9px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-weight:700;cursor:pointer;}
+.splash .err{display:none;}
+.splash.offline .err{display:block;}
+.splash.offline .load{display:none;}
+.splash.offline img{animation:none;filter:grayscale(1) opacity(.6);}
+.splash.hide{display:none;}
+@keyframes pulse{50%{transform:scale(1.06);}}
+</style>
+</head>
+<body>
+<div class="bar">
+  <div class="brand"><img src="icon.png" alt="">HviK</div>
+  <div class="nav">
+    <button id="b-back" title="Zurück" disabled>←</button>
+    <button id="b-fwd" title="Vor" disabled>→</button>
+    <button id="b-reload" title="Neu laden">⟳</button>
+    <button id="b-home" title="Startseite">⌂</button>
+  </div>
+  <div class="title" id="title"></div>
+  <button class="upd" id="upd" hidden></button>
+</div>
+<div class="prog" id="prog"></div>
+<div class="splash" id="splash">
+  <div>
+    <img src="icon.png" alt="">
+    <div class="load"><h1>HviK Community</h1><p>Verbinde mit hvik.org …</p></div>
+    <div class="err"><h1>Keine Verbindung</h1><p id="err-msg">hvik.org ist gerade nicht erreichbar.</p><button id="b-retry">Nochmal versuchen</button></div>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+for (const [id, c] of [['b-back', 'back'], ['b-fwd', 'forward'], ['b-reload', 'reload'], ['b-home', 'home'], ['b-retry', 'retry']])
+  $(id).addEventListener('click', () => shellApi.cmd(c));
+const prog = $('prog');
+shellApi.on('nav', s => {
+  $('b-back').disabled = !s.back;
+  $('b-fwd').disabled = !s.forward;
+  $('title').textContent = s.title && !/^https?:/.test(s.title) ? s.title : '';
+  document.title = s.title ? `${s.title} – HviK` : 'HviK';
+  if (s.loading) { prog.className = 'prog'; void prog.offsetWidth; prog.className = 'prog on'; }
+  else prog.className = 'prog done';
+});
+shellApi.on('update', u => {
+  const b = $('upd');
+  b.hidden = false;
+  if (u.state === 'ready') { b.className = 'upd'; b.textContent = `✨ Update ${u.version} – Neu starten`; b.onclick = () => shellApi.cmd('update-install'); }
+  else { b.className = 'upd busy'; b.textContent = `⬇ Update lädt … ${u.percent || 0} %`; b.onclick = null; }
+});
+shellApi.on('ready', () => $('splash').className = 'splash hide');
+shellApi.on('loading', () => $('splash').className = 'splash');
+shellApi.on('offline', msg => { $('splash').className = 'splash offline'; });
+</script>
+</body>
+</html>

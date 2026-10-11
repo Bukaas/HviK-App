@@ -1,0 +1,67 @@
+{
+  "name": "hvik-app",
+  "productName": "HviK",
+  "version": "0.1.0",
+  "description": "HviK Community – Desktop-App",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "author": "HviK Community",
+  "homepage": "https://hvik.org",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Bukaas/HviK-App.git"
+  },
+  "build": {
+    "appId": "org.hvik.app",
+    "productName": "HviK",
+    "copyright": "HviK Community",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "HviK-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "HviK",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Bukaas",
+        "repo": "HviK-App",
+        "releaseType": "release"
+      }
+    ]
+  }
+}
