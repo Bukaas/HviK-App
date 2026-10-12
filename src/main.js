@@ -53,13 +53,22 @@ function layout() {
 // Andocken wie bei Windows: Fenster an den linken/rechten Rand ziehen = Hälfte, nach oben = maximiert
 // (bei rahmenlosen, durchsichtigen Fenstern macht Windows das nicht zuverlässig selbst)
 let dockFrom = null;
-function snapAfterMove() {
+function snapAfterMove(fake) {
   if (!NEU || win.isMaximized()) return;
   const { screen } = require('electron');
-  const c = screen.getCursorScreenPoint(), d = screen.getDisplayNearestPoint(c), wa = d.workArea, b = d.bounds;
+  const c = fake || screen.getCursorScreenPoint(), d = screen.getDisplayNearestPoint(c), wa = d.workArea, b = d.bounds;
   if (c.y <= b.y + 2) { dockFrom = win.getBounds(); win.maximize(); return; }
-  if (c.x <= b.x + 2) { dockFrom = dockFrom || win.getBounds(); win.setBounds({ x: wa.x, y: wa.y, width: Math.round(wa.width / 2), height: wa.height }); }
-  else if (c.x >= b.x + b.width - 3) { dockFrom = dockFrom || win.getBounds(); const w2 = Math.round(wa.width / 2); win.setBounds({ x: wa.x + wa.width - w2, y: wa.y, width: w2, height: wa.height }); }
+  const leftEdge = c.x <= b.x + 2, rightEdge = c.x >= b.x + b.width - 3;
+  if (!leftEdge && !rightEdge) return;
+  dockFrom = dockFrom || win.getBounds();
+  if (wa.height > wa.width) {
+    // Hochkant-Bildschirm: halbe Breite wäre zu schmal -> volle Breite, obere bzw. untere Hälfte (je nachdem, wo die Maus ist)
+    const h2 = Math.round(wa.height / 2), top = c.y < wa.y + wa.height / 2;
+    win.setBounds({ x: wa.x, y: top ? wa.y : wa.y + wa.height - h2, width: wa.width, height: h2 });
+    return;
+  }
+  const w2 = Math.min(wa.width, Math.max(Math.round(wa.width / 2), win.getMinimumSize()[0]));  // nie schmaler als die App sein kann
+  win.setBounds({ x: leftEdge ? wa.x : wa.x + wa.width - w2, y: wa.y, width: w2, height: wa.height });
 }
 
 function sendNav() {
@@ -92,7 +101,12 @@ function createWindow() {
   win.loadFile(path.join(__dirname, NEU ? 'shell-neu.html' : 'shell.html'));
   if (NEU) {
     for (const ev of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'move']) win.on(ev, layout);
-    win.on('moved', snapAfterMove);
+    win.on('moved', () => setTimeout(snapAfterMove, 60));
+    if (process.env.HVIK_SNAPTEST) setTimeout(() => {  // nur für Tests: Ende eines Ziehens an Position x,y vortäuschen
+      const [x, y] = process.env.HVIK_SNAPTEST.split(',').map(Number);
+      snapAfterMove({ x, y });
+      setTimeout(() => console.log('snaptest', JSON.stringify(win.getBounds()), 'innen', innerNow), 300);
+    }, 6000);  // kurz warten - direkt nach dem Ziehen setzt Windows die Größe sonst zurück
     win.webContents.on('did-finish-load', () => { layout(); applyDesign(); });
   }
   win.once('ready-to-show', () => { if (!process.argv.includes('--versteckt')) win.show(); });  // Autostart: nur ins Symbol unten rechts
@@ -473,10 +487,18 @@ function setIgnoring(v) {
 setInterval(() => {
   if (!NEU || !win || win.isDestroyed() || !win.isVisible()) return;
   if (innerNow || resizing) return setIgnoring(false);
+  // in echten Bildschirmpixeln rechnen: bei Bildschirmen mit unterschiedlicher Skalierung (z. B. hochkant mit 125 %)
+  // passen die "logischen" Koordinaten von Mauszeiger und Fenster sonst nicht zusammen -> Klicks gingen durchs Fenster
   const { screen } = require('electron');
-  const c = screen.getCursorScreenPoint(), b = win.getContentBounds(), x = c.x - b.x, y = c.y - b.y;
-  const inside = x >= 0 && y >= 0 && x < b.width && y < b.height;
-  setIgnoring(inside && !hitRects.some(r => x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h));
+  const dip = win.getContentBounds(), win32 = process.platform === 'win32';
+  const c = win32 ? screen.dipToScreenPoint(screen.getCursorScreenPoint()) : screen.getCursorScreenPoint();
+  const px = win32 ? screen.dipToScreenRect(win, dip) : dip;
+  const sf = px.width / Math.max(1, dip.width);
+  const x = (c.x - px.x) / sf, y = (c.y - px.y) / sf;
+  const inside = x >= 0 && y >= 0 && x < dip.width && y < dip.height;
+  const ign = inside && !hitRects.some(r => x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h);
+  if (process.env.HVIK_DEBUG && (ign !== ignoring || Math.random() < 0.02)) console.log("hit", JSON.stringify({ c, px, dip, x: Math.round(x), y: Math.round(y), inside, ign, rects: hitRects.length }));
+  setIgnoring(ign);
 }, 30);
 ipcMain.on('win-ignore', () => { /* alt (0.17.0): jetzt macht das die Abfrage oben */ });
 // Größe ziehen: die Fensterleiste meldet Start, jede Bewegung (Bildschirm-Koordinaten, solange die Taste gedrückt ist) und das Ende.
