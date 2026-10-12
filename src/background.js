@@ -12,6 +12,7 @@ const DEFAULTS = {
   notify: { lobbys: true, round: true, items: true, mentions: true, bell: true, liga: true, termine: true, admin: true, turnier: true,
             spieler: true, hints: true, ziel: true, online: true, erfolge: true },
   toastMode: 'auto',   // Popups unten rechts: 'auto' = nicht während Vollbild-Spielen, 'immer', 'aus'
+  design: 'alt',       // App-Design: 'alt' oder 'neu' ('neu' erstmal nur für Admins in den Einstellungen)
   discord: true,       // Discord-Status, solange ein Spiel läuft
   spielzeit: true,     // Spielzeit mitzählen
 };

@@ -1,6 +1,22 @@
 // Läuft in hvik.org: die Seite erkennt die App und kann Minecraft (HviK Link) starten.
 const { contextBridge, ipcRenderer } = require('electron');
 
+// App-Design: data-design am <html> + beim neuen Design die zusätzliche Stildatei der Seite
+function applyDesign(d) {
+  const set = () => {
+    document.documentElement.dataset.design = d;
+    let link = document.getElementById('hvik-design-neu');
+    if (d === 'neu' && !link && document.head) {
+      link = Object.assign(document.createElement('link'), { id: 'hvik-design-neu', rel: 'stylesheet',
+                                                            href: '/static/design-neu.css?v=' + Math.floor(Date.now() / 36e5) });
+      document.head.append(link);
+    } else if (d !== 'neu' && link) link.remove();
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', set, { once: true }); else set();
+}
+ipcRenderer.invoke('app-design').then(applyDesign).catch(() => {});
+ipcRenderer.on('design', (e, d) => applyDesign(d));
+
 contextBridge.exposeInMainWorld('hvikApp', {
   settings: patch => ipcRenderer.invoke('app-settings', patch || null),
   diag: () => ipcRenderer.invoke('app-diag'),

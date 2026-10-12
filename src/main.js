@@ -381,15 +381,24 @@ ipcMain.handle('app-settings', async (e, patch) => {
     const allowed = {};
     for (const k of ['autostart', 'tray', 'discord', 'spielzeit']) if (k in patch) allowed[k] = !!patch[k];
     if (['auto', 'immer', 'aus'].includes(patch.toastMode)) allowed.toastMode = patch.toastMode;
+    if (['alt', 'neu'].includes(patch.design)) allowed.design = patch.design;
     if (patch.notify && typeof patch.notify === 'object')
       allowed.notify = { ...background.settings().notify, ...Object.fromEntries(Object.entries(patch.notify).map(([k, v]) => [k, !!v])) };
     saveSettings({ ...loadSettings(), ...allowed });
     background.applyAutostart();
     background.refreshPresence();
+    applyDesign();
   }
   return { ...background.settings(), cfRoot: loadSettings().cfRoot || null, apRoot: archipelago.ROOT };
 });
 ipcMain.handle('app-diag', async e => (fromSite(e) ? background.diag() : null));
+// Design (alt/neu): Fensterleiste und Seite fragen beim Laden nach und bekommen Änderungen sofort
+ipcMain.handle('app-design', () => background.settings().design || 'alt');
+function applyDesign() {
+  const d = background.settings().design || 'alt';
+  if (win && !win.isDestroyed()) win.webContents.send('design', d);
+  if (view && !view.webContents.isDestroyed()) view.webContents.send('design', d);
+}
 ipcMain.handle('app-test-toast', async e => { if (fromSite(e)) background.testToast(); });
 ipcMain.handle('app-test-notify', async e => {
   if (fromSite(e)) background.notify('🔔 So sehen Benachrichtigungen aus', 'Ein Klick drauf bringt dich zur passenden Seite.', '/app/einstellungen');
@@ -413,6 +422,6 @@ app.whenReady().then(() => {
   setupUpdates();
   background.start({ win, view, site: SITE, loadSettings, saveSettings, fetchJson: u => siteGet(u, true), postJson: sitePost, onNet });
   view.webContents.on('did-finish-load', showWhatsNew);
-  win.webContents.on('did-finish-load', () => win.webContents.send('game', background.getRunning()));
+  win.webContents.on('did-finish-load', () => { win.webContents.send('game', background.getRunning()); applyDesign(); });
 });
 app.on('window-all-closed', () => app.quit());

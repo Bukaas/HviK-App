@@ -51,6 +51,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-famil
 .splash.hide{display:none;}
 @keyframes pulse{50%{transform:scale(1.06);}}
 </style>
+<link id="design-neu" rel="stylesheet" href="design-neu.css" disabled>
 </head>
 <body>
 <div class="bar">
@@ -97,6 +98,8 @@ shellApi.on('update', u => {
   if (u.state === 'ready') { b.className = 'upd'; b.textContent = `✨ Update ${u.version} – Neu starten`; b.onclick = () => shellApi.cmd('update-install'); }
   else { b.className = 'upd busy'; b.textContent = `⬇ Update lädt … ${u.percent || 0} %`; b.onclick = null; }
 });
+// App-Design: neue Stildatei der Fensterleiste an/aus
+shellApi.on('design', d => { document.documentElement.dataset.design = d; document.getElementById('design-neu').disabled = d !== 'neu'; });
 shellApi.on('game', g => {
   const b = $('b-game'), x = $('b-game-x');
   b.hidden = x.hidden = !g;
