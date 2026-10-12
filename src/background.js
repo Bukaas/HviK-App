@@ -13,6 +13,7 @@ const DEFAULTS = {
             spieler: true, hints: true, ziel: true, online: true, erfolge: true },
   toastMode: 'auto',   // Popups unten rechts: 'auto' = nicht während Vollbild-Spielen, 'immer', 'aus'
   design: 'alt',       // App-Design: 'alt' oder 'neu' ('neu' erstmal nur für Admins in den Einstellungen)
+  palette: 'ozean',    // Farbwelt des neuen Designs: aurora, ozean, glut, gift, sakura, rot
   discord: true,       // Discord-Status, solange ein Spiel läuft
   spielzeit: true,     // Spielzeit mitzählen
 };

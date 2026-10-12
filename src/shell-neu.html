@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="de" data-palette="ozean">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: https:">
+<title>HviK</title>
+<style>
+/* Neues App-Design: Fenster ohne Rahmen, Leiste links (Neon-Kante) versteckt sich hinter dem Fenster und fährt beim Drüberfahren raus.
+   Maße passen zu main.js (RAIL_ZONE / PAD / NBAR). */
+:root{--zone:104px;--pad:14px;--bar:46px;
+  --c1:#3ee0ff;--c2:#3b6fff;--c3:#8a5cff;--light:#a8ecff;--bg1:#0b1838;--bg2:#06102a;--rail1:#081230;--rail2:#050b22;--mint:#5cffb4;}
+html[data-palette="aurora"]{--c1:#ff8a5c;--c2:#ff2e8a;--c3:#7a5cff;--light:#ffb3cf;--bg1:#1b1038;--bg2:#0e1030;--rail1:#120b26;--rail2:#0c0820;--mint:#62f2c2;}
+html[data-palette="glut"]{--c1:#ffb547;--c2:#ff4d3d;--c3:#c2185b;--light:#ffd59a;--bg1:#221012;--bg2:#0f0809;--rail1:#170b0c;--rail2:#0d0606;--mint:#7dff9e;}
+html[data-palette="gift"]{--c1:#c6ff5c;--c2:#1fd6a0;--c3:#2b7fff;--light:#dcffb0;--bg1:#0c1f1e;--bg2:#061212;--rail1:#081614;--rail2:#040c0b;--mint:#c6ff5c;}
+html[data-palette="sakura"]{--c1:#ff9ad5;--c2:#b98bff;--c3:#7fc8ff;--light:#ffd6ef;--bg1:#2a1842;--bg2:#170e2b;--rail1:#1c1030;--rail2:#130a22;--mint:#8ff5d0;}
+html[data-palette="rot"]{--c1:#ff8a3d;--c2:#ff2d48;--c3:#a3122b;--light:#ffb3bb;--bg1:#1e0b10;--bg2:#0b0506;--rail1:#130709;--rail2:#0a0405;--mint:#5cf0a0;}
+*{box-sizing:border-box;}
+html,body{margin:0;height:100%;background:transparent;color:#eef2ff;font-family:"Segoe UI",system-ui,sans-serif;overflow:hidden;user-select:none;}
+
+/* ---------- Fenster-Körper ---------- */
+.frame{position:fixed;z-index:2;left:var(--zone);top:var(--pad);right:var(--pad);bottom:var(--pad);border-radius:22px;overflow:hidden;
+  background:radial-gradient(700px 420px at 10% -10%,color-mix(in srgb,var(--c1) 26%,transparent),transparent 60%),
+             radial-gradient(800px 600px at 110% 110%,color-mix(in srgb,var(--c3) 24%,transparent),transparent 60%),linear-gradient(160deg,var(--bg1),var(--bg2));
+  box-shadow:0 6px 22px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.07);}
+.strip{position:absolute;left:0;right:0;top:0;height:var(--bar);display:flex;align-items:center;gap:6px;padding:0 6px 0 16px;-webkit-app-region:drag;}
+.nav{display:flex;gap:2px;-webkit-app-region:no-drag;}
+.nav button,.ctl button{width:32px;height:30px;border:0;border-radius:9px;background:transparent;color:rgba(255,255,255,.6);font-size:15px;cursor:pointer;display:grid;place-items:center;}
+.nav button:hover:not(:disabled){background:rgba(255,255,255,.08);color:#fff;}
+.nav button:disabled{opacity:.28;cursor:default;}
+.title{flex:1;text-align:center;font-size:12.5px;color:rgba(255,255,255,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pill{-webkit-app-region:no-drag;border:1px solid color-mix(in srgb,var(--c1) 55%,transparent);background:color-mix(in srgb,var(--c1) 14%,transparent);color:var(--light);
+  border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis;}
+.pill:hover{background:color-mix(in srgb,var(--c1) 30%,transparent);color:#fff;}
+.pill.busy{cursor:default;opacity:.7;}
+.pill.warn{border-color:#b8862f;background:rgba(255,193,7,.12);color:#ffd166;cursor:default;}
+.x{-webkit-app-region:no-drag;border:0;background:transparent;color:rgba(255,255,255,.5);cursor:pointer;font-size:11px;padding:4px;margin-left:-4px;}
+.find{-webkit-app-region:no-drag;display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:2px 4px 2px 10px;}
+.find[hidden]{display:none;}
+.find input{background:transparent;border:0;outline:0;color:#fff;font:inherit;font-size:12.5px;width:200px;}
+.find span{font-size:11.5px;color:rgba(255,255,255,.55);min-width:46px;text-align:right;font-variant-numeric:tabular-nums;}
+.find button{border:0;background:transparent;color:rgba(255,255,255,.6);cursor:pointer;font-size:11px;padding:3px 5px;border-radius:5px;}
+.ctl{display:flex;gap:2px;margin-left:6px;-webkit-app-region:no-drag;}
+.ctl button{width:40px;font-size:13px;}
+.ctl button:hover{background:rgba(255,255,255,.1);color:#fff;}
+.ctl button.close:hover{background:#e0384f;}
+.prog{position:absolute;left:0;top:calc(var(--bar) - 2px);height:2px;width:0;background:linear-gradient(90deg,var(--c1),var(--c2));opacity:0;transition:width .4s ease,opacity .3s;}
+.prog.on{opacity:1;width:70%;transition:width 6s cubic-bezier(.1,.6,.2,1);}
+.prog.done{opacity:0;width:100%;transition:width .2s,opacity .4s .2s;}
+
+/* Lade-/Offline-Bildschirm im Fenster */
+.splash{position:absolute;inset:var(--bar) 0 0 0;display:grid;place-items:center;text-align:center;}
+.splash img{width:130px;height:130px;filter:drop-shadow(0 0 30px color-mix(in srgb,var(--c2) 55%,transparent));animation:pulse 1.6s ease-in-out infinite;}
+.splash h1{margin:18px 0 6px;font-size:22px;}
+.splash p{margin:0;color:rgba(255,255,255,.6);font-size:14px;}
+.splash button{margin-top:18px;padding:9px 18px;border-radius:999px;border:0;background:linear-gradient(135deg,var(--c1),var(--c2));color:#fff;font-weight:700;cursor:pointer;}
+.splash .err{display:none;} .splash.offline .err{display:block;} .splash.offline .load{display:none;}
+.splash.offline img{animation:none;filter:grayscale(1) opacity(.6);}
+.splash.hide{display:none;}
+.guide{display:none;max-width:560px;margin:18px auto 0;text-align:left;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:14px 16px;}
+.guide.has{display:block;} .guide b{display:block;margin-bottom:8px;}
+.guide ol{margin:0;padding-left:20px;color:rgba(255,255,255,.8);font-size:13px;display:grid;gap:6px;user-select:text;}
+.guide code{background:rgba(0,0,0,.3);border-radius:6px;padding:1px 6px;}
+@keyframes pulse{50%{transform:scale(1.06);}}
+
+/* ---------- Leiste (Neon-Kante) ---------- */
+.rail{position:fixed;z-index:1;left:calc(var(--zone) - 22px);top:92px;bottom:92px;width:104px;padding:14px 22px 14px 0;border-radius:40px 0 0 40px;
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  background:linear-gradient(180deg,var(--rail1),var(--rail2));box-shadow:-14px 18px 40px rgba(0,0,0,.45);
+  transition:left .32s cubic-bezier(.2,.9,.25,1.05);}
+.rail.open{left:calc(var(--zone) - 96px);}
+.rail::before{content:"";position:absolute;left:0;top:28px;bottom:28px;width:3px;border-radius:3px;background:linear-gradient(180deg,var(--c1),var(--c2) 50%,var(--c3));
+  box-shadow:0 0 14px color-mix(in srgb,var(--c2) 80%,transparent);}
+.rail::after{content:"";position:absolute;inset:0;border-radius:inherit;border:1px solid rgba(255,255,255,.07);border-right:0;pointer-events:none;}
+.rail > *{opacity:0;transition:opacity .2s;}
+.rail.open > *{opacity:1;}
+.logo{width:44px;height:44px;flex:none;border-radius:50%;background:url(icon.png) center/cover;margin-bottom:6px;box-shadow:0 0 0 2px color-mix(in srgb,var(--c2) 55%,transparent),0 0 20px color-mix(in srgb,var(--c2) 40%,transparent);cursor:pointer;}
+.it{position:relative;flex:none;width:46px;height:40px;border:0;background:none;display:grid;place-items:center;color:rgba(255,255,255,.58);cursor:pointer;border-radius:12px;}
+.it svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transition:transform .15s;}
+.it:hover{color:#fff;}
+.it:hover svg{transform:scale(1.1);}
+.it.on{color:#fff;}
+.it.on svg{stroke:url(#grad);width:25px;height:25px;filter:drop-shadow(0 0 6px color-mix(in srgb,var(--c2) 85%,transparent));}
+.it.on::before{content:"";position:absolute;left:-14px;top:7px;bottom:7px;width:4px;border-radius:2px;background:linear-gradient(var(--c1),var(--c2));box-shadow:0 0 12px var(--c2);}
+.it.on::after{content:"";position:absolute;inset:3px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--c2) 26%,transparent),transparent 70%);}
+.bdg{position:absolute;top:2px;right:2px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--c2);color:#fff;font:800 9.5px/16px "Segoe UI";text-align:center;box-shadow:0 0 0 2px var(--rail2);}
+.bdg:empty{display:none;}
+.onl{flex:none;display:flex;flex-direction:column;align-items:center;gap:2px;font:700 11.5px "Segoe UI";color:var(--mint);cursor:pointer;margin:2px 0 2px;border:0;background:none;}
+.onl em{width:9px;height:9px;border-radius:50%;background:var(--mint);box-shadow:0 0 10px var(--mint);}
+.grow{flex:1;min-height:6px;}
+.me{flex:none;width:40px;height:40px;border-radius:50%;margin-top:4px;border:0;cursor:pointer;background:linear-gradient(135deg,var(--c1),var(--c2)) center/cover;
+  box-shadow:0 0 0 2px var(--rail2),0 0 0 3.5px color-mix(in srgb,var(--c2) 60%,transparent);color:#fff;font:700 14px "Segoe UI";}
+@media (max-height:780px){.it{height:36px;} .logo{width:38px;height:38px;} .rail{top:70px;bottom:70px;} .me{width:36px;height:36px;}}
+@media (max-height:700px){.rail .it.extra{display:none;}}
+
+/* Ränder zum Größe-Ziehen (im durchsichtigen Rand um das Fenster) */
+.rz{position:fixed;z-index:3;}
+.rz.e{right:0;top:var(--pad);bottom:var(--pad);width:var(--pad);cursor:ew-resize;}
+.rz.s{left:var(--zone);right:var(--pad);bottom:0;height:var(--pad);cursor:ns-resize;}
+.rz.n{left:var(--zone);right:var(--pad);top:0;height:8px;cursor:ns-resize;}
+.rz.se{right:0;bottom:0;width:22px;height:22px;cursor:nwse-resize;}
+.rz.ne{right:0;top:0;width:22px;height:16px;cursor:nesw-resize;}
+
+/* Maximiert: Fenster füllt alles, Leiste ist ganz drin */
+.max .frame{inset:0;border-radius:0;box-shadow:none;}
+.max .rail{z-index:3;left:8px;top:70px;bottom:70px;width:84px;padding-right:0;border-radius:36px;}
+.max .rail > *{opacity:1;}
+.max .rail::after{border-right:1px solid rgba(255,255,255,.07);}
+.max .rz{display:none;}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs><linearGradient id="grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--c1)"/><stop offset="1" style="stop-color:var(--c2)"/></linearGradient></defs></svg>
+
+<nav class="rail hit" id="rail">
+  <span class="logo" data-go="/" title="HviK Community – Startseite"></span>
+  <button class="it" data-go="/" data-m="^/$" title="Startseite"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg></button>
+  <button class="it" data-go="/events/archipelago" data-m="^/events/archipelago" title="Archipelago"><svg viewBox="0 0 24 24"><path d="M9 3h6v4a2 2 0 1 0 0 4v4h-4a2 2 0 1 1-4 0H3V9h4a2 2 0 1 0 0-4h2z"/></svg></button>
+  <button class="it" data-go="/tournaments" data-m="^/tournaments" title="Turniere"><svg viewBox="0 0 24 24"><path d="M7 4h10v4a5 5 0 0 1-10 0z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/><path d="M12 13v4M8 21h8M9 17h6"/></svg></button>
+  <button class="it" data-go="/liga" data-m="^/liga" title="Liga"><svg viewBox="0 0 24 24"><path d="M5 19L19 5M15 5h4v4"/><path d="M19 19L5 5M9 5H5v4"/></svg></button>
+  <button class="it" data-go="/events" data-m="^/(events|termine)(/|$)(?!archipelago)" title="Events &amp; Termine"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></button>
+  <button class="it extra" data-go="/lineups" data-m="^/lineups" title="Valorant Lineups"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+  <button class="it extra" data-go="/games/minecraft" data-m="^/games/minecraft" title="Minecraft HviK Link"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M4 10h16M10 5v14"/></svg></button>
+  <button class="it extra" data-go="/leaderboards" data-m="^/leaderboards" title="Leaderboards"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6"/></svg></button>
+  <span class="grow"></span>
+  <button class="it" data-site="bell" title="Benachrichtigungen"><svg viewBox="0 0 24 24"><path d="M6 9a6 6 0 0 1 12 0c0 6 2 8 2 8H4s2-2 2-8"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span class="bdg" id="bdg-bell"></span></button>
+  <button class="onl" data-site="online" title="Wer ist gerade online?"><em></em><span id="onl-n">–</span></button>
+  <button class="it" data-go="/app/einstellungen" data-m="^/app/einstellungen" title="Einstellungen"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg></button>
+  <button class="me" id="me" data-site="user" title="Dein Profil"></button>
+</nav>
+
+<div class="frame hit" id="frame">
+  <div class="strip" id="strip">
+    <div class="nav">
+      <button id="b-back" title="Zurück" disabled>←</button>
+      <button id="b-fwd" title="Vor" disabled>→</button>
+      <button id="b-reload" title="Neu laden">⟳</button>
+    </div>
+    <span class="pill warn" id="net" hidden>⚠ Keine Verbindung – verbinde neu …</span>
+    <button class="pill" id="b-game" hidden title="Anleitung zum laufenden Spiel öffnen"></button><button class="x" id="b-game-x" hidden title="Ausblenden">✕</button>
+    <div class="title" id="title"></div>
+    <div class="find" id="find" hidden><input id="find-in" placeholder="Auf der Seite suchen …" spellcheck="false"><span id="find-n"></span><button id="find-up" title="Vorheriger (Umschalt+Enter)">▲</button><button id="find-down" title="Nächster (Enter)">▼</button><button id="find-x" title="Schließen (Esc)">✕</button></div>
+    <button class="pill" id="upd" hidden></button>
+    <button class="pill" id="b-notes" title="Patchnotes – was ist neu?" style="border-color:transparent;background:transparent;color:rgba(255,255,255,.6)">📜</button>
+    <div class="ctl"><button id="w-min" title="Minimieren">—</button><button id="w-max" title="Maximieren">☐</button><button class="close" id="w-close" title="Schließen">✕</button></div>
+  </div>
+  <div class="prog" id="prog"></div>
+  <div class="splash" id="splash">
+    <div>
+      <img src="icon.png" alt="">
+      <div class="load"><h1>HviK Community</h1><p>Verbinde mit hvik.org …</p></div>
+      <div class="err"><h1>Keine Verbindung</h1><p>hvik.org ist gerade nicht erreichbar – ich versuche es gleich von selbst nochmal.</p><button id="b-retry">Nochmal versuchen</button>
+        <div class="guide" id="guide"></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="rz e hit" data-edge="e"></div><div class="rz s hit" data-edge="s"></div><div class="rz n hit" data-edge="n"></div>
+<div class="rz se hit" data-edge="se"></div><div class="rz ne hit" data-edge="ne"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const root = document.documentElement;
+
+// ---- Knöpfe ----
+for (const [id, c] of [['b-back', 'back'], ['b-fwd', 'forward'], ['b-reload', 'reload'], ['b-retry', 'retry'], ['b-notes', 'notes'],
+                       ['b-game', 'game-open'], ['b-game-x', 'game-clear'], ['w-min', 'win-min'], ['w-max', 'win-max'], ['w-close', 'win-close']])
+  $(id).addEventListener('click', () => shellApi.cmd(c));
+$('strip').addEventListener('dblclick', e => { if (e.target === $('strip') || e.target === $('title')) shellApi.cmd('win-max'); });
+document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => shellApi.cmd('go:' + b.dataset.go)));
+document.querySelectorAll('[data-site]').forEach(b => b.addEventListener('click', () => shellApi.cmd('site:' + b.dataset.site)));
+
+// ---- Leiste: fährt beim Drüberfahren raus, mit kurzer Verzögerung wieder rein ----
+const rail = $('rail');
+let closeT = null;
+rail.addEventListener('mouseenter', () => { clearTimeout(closeT); rail.classList.add('open'); });
+rail.addEventListener('mouseleave', () => { clearTimeout(closeT); closeT = setTimeout(() => rail.classList.remove('open'), 420); });
+
+// ---- Durchsichtige Stellen lassen Klicks zum Desktop durch ----
+let ign = null;
+const setIgn = v => { if (v !== ign) { ign = v; shellApi.ignore(v); } };
+document.addEventListener('mousemove', e => setIgn(!root.classList.contains('max') && !e.target.closest('.hit')));
+document.addEventListener('mouseleave', () => { if (!resizing) setIgn(!root.classList.contains('max')); });
+
+// ---- Größe ziehen an den Rändern ----
+let resizing = false;
+document.querySelectorAll('.rz').forEach(h => {
+  h.addEventListener('pointerdown', e => { if (e.button !== 0) return; resizing = true; h.setPointerCapture(e.pointerId); shellApi.resize(h.dataset.edge); });
+  const end = () => { if (resizing) { resizing = false; shellApi.resize(null); } };
+  h.addEventListener('pointerup', end); h.addEventListener('lostpointercapture', end);
+});
+
+// ---- Aktiver Bereich nach Adresse ----
+function markActive(url) {
+  let p = '/';
+  try { p = new URL(url).pathname; } catch { /* egal */ }
+  let hit = false;
+  document.querySelectorAll('.it[data-m]').forEach(b => { const on = !hit && new RegExp(b.dataset.m).test(p); b.classList.toggle('on', on); hit = hit || on; });
+}
+
+const prog = $('prog');
+shellApi.on('nav', s => {
+  $('b-back').disabled = !s.back;
+  $('b-fwd').disabled = !s.forward;
+  $('title').textContent = s.title && !/^https?:/.test(s.title) ? s.title : '';
+  document.title = s.title ? `${s.title} – HviK` : 'HviK';
+  if (s.loading) { prog.className = 'prog'; void prog.offsetWidth; prog.className = 'prog on'; } else prog.className = 'prog done';
+  markActive(s.url);
+});
+shellApi.on('palette', p => { root.dataset.palette = p || 'ozean'; });
+shellApi.on('max', m => { root.classList.toggle('max', !!m); $('w-max').textContent = m ? '❐' : '☐'; $('w-max').title = m ? 'Verkleinern' : 'Maximieren'; if (m) setIgn(false); });
+shellApi.on('badges', b => {
+  $('bdg-bell').textContent = b.bell || '';
+  $('onl-n').textContent = b.onl || '–';
+  const me = $('me');
+  if (b.avatar) { me.style.backgroundImage = `url("${b.avatar}")`; me.textContent = ''; }
+  else me.textContent = (b.name || '?').slice(0, 1).toUpperCase();
+  if (b.name) me.title = b.name + ' – Profil, Ausloggen';
+});
+shellApi.on('update', u => {
+  const b = $('upd');
+  b.hidden = false;
+  if (u.state === 'ready') { b.className = 'pill'; b.textContent = `✨ Update ${u.version} – Neu starten`; b.onclick = () => shellApi.cmd('update-install'); }
+  else { b.className = 'pill busy'; b.textContent = `⬇ Update lädt … ${u.percent || 0} %`; b.onclick = null; }
+});
+shellApi.on('game', g => {
+  $('b-game').hidden = $('b-game-x').hidden = !g;
+  if (g) $('b-game').textContent = `${g.icon || '🎮'} ${g.label} läuft · 📋 Anleitung`;
+});
+shellApi.on('net', ok => { $('net').hidden = !!ok; });
+shellApi.on('guide', g => {
+  const box = $('guide');
+  box.className = 'guide' + (g ? ' has' : '');
+  if (!g) return;
+  box.replaceChildren();
+  const t = document.createElement('b'); t.textContent = '📋 Deine letzte Anleitung: ' + (g.title || ''); box.append(t);
+  const ol = document.createElement('ol');
+  (g.steps || []).forEach(s => { const li = document.createElement('li'); li.textContent = s.text + ' ';
+    if (s.copy) { const c = document.createElement('code'); c.textContent = s.copy; li.append(c); } ol.append(li); });
+  box.append(ol);
+});
+const fBox = $('find'), fIn = $('find-in'), fN = $('find-n');
+shellApi.on('find-open', () => { fBox.hidden = false; $('title').hidden = true; fIn.focus(); fIn.select(); if (fIn.value) shellApi.find(fIn.value); });
+shellApi.on('find-close', () => { fBox.hidden = true; $('title').hidden = false; fN.textContent = ''; });
+shellApi.on('find-result', r => { fN.textContent = r.matches ? `${r.active}/${r.matches}` : (fIn.value ? 'keine' : ''); });
+fIn.addEventListener('input', () => shellApi.find(fIn.value));
+fIn.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); shellApi.find(fIn.value, {next: true, back: e.shiftKey}); }
+  else if (e.key === 'Escape') { e.preventDefault(); shellApi.findStop(); }
+});
+$('find-down').onclick = () => shellApi.find(fIn.value, {next: true});
+$('find-up').onclick = () => shellApi.find(fIn.value, {next: true, back: true});
+$('find-x').onclick = () => shellApi.findStop();
+shellApi.on('ready', () => $('splash').className = 'splash hide');
+shellApi.on('loading', () => $('splash').className = 'splash');
+shellApi.on('offline', () => { $('splash').className = 'splash offline'; });
+</script>
+</body>
+</html>

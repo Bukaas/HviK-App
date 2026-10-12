@@ -25,10 +25,19 @@ function saveBounds(win) {
 }
 
 let win, view, firstLoad = true;
+// Neues Design (Einstellungen → Design: Neu): Fenster ohne Rahmen und durchsichtig, links Platz für die Leiste,
+// die hinter dem Fenster hervorschaut. Gilt ab App-Start (Umschalten startet die App neu).
+let NEU = false;
+const RAIL_ZONE = 104, PAD = 14, NBAR = 46;  // passen zu shell-neu.html (--zone / --pad / --bar)
 
 function layout() {
   const [w, h] = win.getContentSize();
-  view.setBounds({ x: 0, y: BAR, width: w, height: Math.max(0, h - BAR) });
+  if (!NEU) { view.setBounds({ x: 0, y: BAR, width: w, height: Math.max(0, h - BAR) }); return; }
+  const max = win.isMaximized() || win.isFullScreen();
+  const pad = max ? 0 : PAD;
+  view.setBounds({ x: RAIL_ZONE, y: pad + NBAR, width: Math.max(0, w - RAIL_ZONE - pad), height: Math.max(0, h - pad - NBAR - pad) });
+  view.setBorderRadius(max ? 0 : 16);
+  win.webContents.send('max', max);
 }
 
 function sendNav() {
@@ -48,16 +57,21 @@ function createWindow() {
     return b.x + 100 > a.x && b.x < a.x + a.width - 100 && b.y + 40 > a.y && b.y < a.y + a.height - 40;
   });
   if (!visible) { delete b.x; delete b.y; }
-  win = new BrowserWindow({
-    width: b.width || 1320, height: b.height || 840, x: b.x, y: b.y, minWidth: 940, minHeight: 600,
-    title: 'HviK', backgroundColor: '#0d0f13', show: false,
-    icon: path.join(__dirname, 'icon.ico'),
-    titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#0d0f13', symbolColor: '#c9ced8', height: BAR },
-    webPreferences: { preload: path.join(__dirname, 'shell-preload.js') },
-  });
+  NEU = loadSettings().design === 'neu';
+  const common = { x: b.x, y: b.y, title: 'HviK', show: false, icon: path.join(__dirname, 'icon.ico'),
+                   webPreferences: { preload: path.join(__dirname, 'shell-preload.js') } };
+  win = NEU
+    // neues Design: durchsichtig + ohne Rahmen (Leiste ragt links raus); Größe ziehen macht shell-neu.html über win-resize
+    ? new BrowserWindow({ ...common, width: b.width || 1320 + RAIL_ZONE, height: b.height || 840, minWidth: 940 + RAIL_ZONE, minHeight: 600,
+                          frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false, resizable: true })
+    : new BrowserWindow({ ...common, width: b.width || 1320, height: b.height || 840, minWidth: 940, minHeight: 600, backgroundColor: '#0d0f13',
+                          titleBarStyle: 'hidden', titleBarOverlay: { color: '#0d0f13', symbolColor: '#c9ced8', height: BAR } });
   if (b.max) win.maximize();
-  win.loadFile(path.join(__dirname, 'shell.html'));
+  win.loadFile(path.join(__dirname, NEU ? 'shell-neu.html' : 'shell.html'));
+  if (NEU) {
+    for (const ev of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(ev, layout);
+    win.webContents.on('did-finish-load', () => { layout(); applyDesign(); });
+  }
   win.once('ready-to-show', () => { if (!process.argv.includes('--versteckt')) win.show(); });  // Autostart: nur ins Symbol unten rechts
 
   view = new WebContentsView({
@@ -85,6 +99,7 @@ function createWindow() {
   wc.on('found-in-page', (e, r) => win.webContents.send('find-result', { matches: r.matches, active: r.activeMatchOrdinal }));
   wc.on('did-navigate', () => { if (finding) stopFind(); });
   wc.on('did-finish-load', () => {
+    setTimeout(sendBadges, 1500);
     if (firstLoad) { firstLoad = false; view.setVisible(true); win.webContents.send('ready'); }
   });
   wc.on('did-fail-load', (e, code, desc, url, isMain) => {
@@ -135,8 +150,20 @@ ipcMain.on('find', (e, text, opts) => {
 });
 ipcMain.on('find-stop', () => stopFind());
 
+// Menüs der Seite (Glocke, wer online ist, Profil) - im neuen Design öffnet sie die Leiste
+const SITE_MENUS = {
+  bell: "typeof toggleBell === 'function' && toggleBell(new MouseEvent('click'))",
+  online: "(document.getElementById('onl') || {classList: {toggle() {}}}).classList.toggle('open')",
+  user: "typeof toggleUserMenu === 'function' && toggleUserMenu(new MouseEvent('click'))",
+};
 ipcMain.on('nav-cmd', (e, cmd) => {
   const wc = view.webContents;
+  cmd = String(cmd || '');
+  if (cmd === 'win-min') return win.minimize();
+  if (cmd === 'win-max') return win.isMaximized() ? win.unmaximize() : win.maximize();
+  if (cmd === 'win-close') return win.close();
+  if (cmd.startsWith('go:')) { const p = cmd.slice(3); if (/^\/[\w\-/#?=&.]*$/.test(p)) wc.loadURL(SITE + p); return; }
+  if (cmd.startsWith('site:')) { const js = SITE_MENUS[cmd.slice(5)]; if (js) { wc.focus(); wc.executeJavaScript(js, true).catch(() => {}); } return; }
   if (cmd === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
   else if (cmd === 'forward' && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
   else if (cmd === 'reload') wc.reload();
@@ -382,23 +409,63 @@ ipcMain.handle('app-settings', async (e, patch) => {
     for (const k of ['autostart', 'tray', 'discord', 'spielzeit']) if (k in patch) allowed[k] = !!patch[k];
     if (['auto', 'immer', 'aus'].includes(patch.toastMode)) allowed.toastMode = patch.toastMode;
     if (['alt', 'neu'].includes(patch.design)) allowed.design = patch.design;
+    if (PALETTES.includes(patch.palette)) allowed.palette = patch.palette;
     if (patch.notify && typeof patch.notify === 'object')
       allowed.notify = { ...background.settings().notify, ...Object.fromEntries(Object.entries(patch.notify).map(([k, v]) => [k, !!v])) };
     saveSettings({ ...loadSettings(), ...allowed });
     background.applyAutostart();
     background.refreshPresence();
     applyDesign();
+    // Alt <-> Neu braucht ein anderes Fenster (mit/ohne Rahmen) -> App kurz neu starten
+    if (allowed.design && (allowed.design === 'neu') !== NEU) setTimeout(() => { app.relaunch(); app.exit(0); }, 600);
   }
-  return { ...background.settings(), cfRoot: loadSettings().cfRoot || null, apRoot: archipelago.ROOT };
+  return { ...background.settings(), cfRoot: loadSettings().cfRoot || null, apRoot: archipelago.ROOT, designActive: NEU ? 'neu' : 'alt' };
 });
 ipcMain.handle('app-diag', async e => (fromSite(e) ? background.diag() : null));
-// Design (alt/neu): Fensterleiste und Seite fragen beim Laden nach und bekommen Änderungen sofort
-ipcMain.handle('app-design', () => background.settings().design || 'alt');
+// Design: Fensterleiste und Seite fragen beim Laden nach und bekommen Änderungen sofort.
+// Maßgeblich ist das Fenster, das gerade läuft (NEU) - die gespeicherte Einstellung gilt erst nach dem Neustart.
+const PALETTES = ['aurora', 'ozean', 'glut', 'gift', 'sakura', 'rot'];
+const palette = () => (PALETTES.includes(background.settings().palette) ? background.settings().palette : 'ozean');
+ipcMain.handle('app-design', () => (NEU ? 'neu' : 'alt'));
+ipcMain.handle('app-palette', () => palette());
 function applyDesign() {
-  const d = background.settings().design || 'alt';
-  if (win && !win.isDestroyed()) win.webContents.send('design', d);
-  if (view && !view.webContents.isDestroyed()) view.webContents.send('design', d);
+  const d = NEU ? 'neu' : 'alt', p = palette();
+  for (const wc of [win && !win.isDestroyed() && win.webContents, view && !view.webContents.isDestroyed() && view.webContents]) {
+    if (!wc) continue;
+    wc.send('design', d);
+    wc.send('palette', p);
+  }
 }
+
+// ---------- Neues Design: Fensterknöpfe, Durchklicken, Größe ziehen, Zähler in der Leiste ----------
+ipcMain.on('win-ignore', (e, v) => { if (NEU && win && e.sender === win.webContents) win.setIgnoreMouseEvents(!!v, { forward: true }); });
+let resizing = null;
+ipcMain.on('win-resize', (e, edge) => {
+  if (resizing) { clearInterval(resizing); resizing = null; }
+  if (!NEU || !win || !edge || win.isMaximized() || e.sender !== win.webContents) return;
+  const { screen } = require('electron');
+  const start = screen.getCursorScreenPoint(), b = win.getBounds(), [mw, mh] = win.getMinimumSize(), began = Date.now();
+  resizing = setInterval(() => {
+    if (Date.now() - began > 60000) { clearInterval(resizing); resizing = null; return; }  // Sicherung, falls das Loslassen verloren geht
+    const p = screen.getCursorScreenPoint(), dx = p.x - start.x, dy = p.y - start.y, nb = { ...b };
+    if (edge.includes('e')) nb.width = Math.max(mw, b.width + dx);
+    if (edge.includes('s')) nb.height = Math.max(mh, b.height + dy);
+    if (edge.includes('n')) { nb.height = Math.max(mh, b.height - dy); nb.y = b.y + b.height - nb.height; }
+    win.setBounds(nb);
+  }, 16);
+});
+// Glocken-Zahl, Online-Zahl und Profilbild aus der Seite für die Leiste
+async function sendBadges() {
+  if (!NEU || !view || view.webContents.isDestroyed() || !win || win.isDestroyed()) return;
+  try {
+    const b = await view.webContents.executeJavaScript(`(() => { const g = id => document.getElementById(id);
+      const bell = g('bell-badge'), chip = document.querySelector('.user-chip img'), name = document.querySelector('.user-chip span');
+      return { bell: bell && !bell.hidden ? bell.textContent.trim() : '', onl: (g('onl-n') || {}).textContent || '',
+               avatar: chip ? chip.src : '', name: name ? name.textContent.trim() : '' }; })()`, true);
+    win.webContents.send('badges', b);
+  } catch { /* Seite lädt gerade */ }
+}
+setInterval(sendBadges, 15000);
 ipcMain.handle('app-test-toast', async e => { if (fromSite(e)) background.testToast(); });
 ipcMain.handle('app-test-notify', async e => {
   if (fromSite(e)) background.notify('🔔 So sehen Benachrichtigungen aus', 'Ein Klick drauf bringt dich zur passenden Seite.', '/app/einstellungen');

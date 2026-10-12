@@ -16,6 +16,14 @@ function applyDesign(d) {
 }
 ipcRenderer.invoke('app-design').then(applyDesign).catch(() => {});
 ipcRenderer.on('design', (e, d) => applyDesign(d));
+// Farbwelt des neuen Designs (data-palette am <html>, design-neu.css färbt danach)
+function applyPalette(p) {
+  const set = () => { document.documentElement.dataset.palette = p || 'ozean'; };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', set, { once: true }); else set();
+  if (document.documentElement) set();
+}
+ipcRenderer.invoke('app-palette').then(applyPalette).catch(() => {});
+ipcRenderer.on('palette', (e, p) => applyPalette(p));
 
 contextBridge.exposeInMainWorld('hvikApp', {
   settings: patch => ipcRenderer.invoke('app-settings', patch || null),
