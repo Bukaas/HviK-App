@@ -7,7 +7,7 @@
 <style>
 /* Neues App-Design: Fenster ohne Rahmen, Leiste links (Neon-Kante) versteckt sich hinter dem Fenster und fährt beim Drüberfahren raus.
    Maße passen zu main.js (RAIL_ZONE / PAD / NBAR). */
-:root{--zone:104px;--pad:14px;--bar:46px;
+:root{--zone:104px;--pad:14px;--bar:36px;
   --c1:#3ee0ff;--c2:#3b6fff;--c3:#8a5cff;--light:#a8ecff;--bg1:#0b1838;--bg2:#06102a;--rail1:#081230;--rail2:#050b22;--mint:#5cffb4;}
 html[data-palette="aurora"]{--c1:#ff8a5c;--c2:#ff2e8a;--c3:#7a5cff;--light:#ffb3cf;--bg1:#1b1038;--bg2:#0e1030;--rail1:#120b26;--rail2:#0c0820;--mint:#62f2c2;}
 html[data-palette="glut"]{--c1:#ffb547;--c2:#ff4d3d;--c3:#c2185b;--light:#ffd59a;--bg1:#221012;--bg2:#0f0809;--rail1:#170b0c;--rail2:#0d0606;--mint:#7dff9e;}
@@ -24,7 +24,7 @@ html,body{margin:0;height:100%;background:transparent;color:#eef2ff;font-family:
   box-shadow:0 6px 22px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.07);}
 .strip{position:absolute;left:0;right:0;top:0;height:var(--bar);display:flex;align-items:center;gap:6px;padding:0 6px 0 16px;-webkit-app-region:drag;}
 .nav{display:flex;gap:2px;-webkit-app-region:no-drag;}
-.nav button,.ctl button{width:32px;height:30px;border:0;border-radius:9px;background:transparent;color:rgba(255,255,255,.6);font-size:15px;cursor:pointer;display:grid;place-items:center;}
+.nav button,.ctl button{width:30px;height:28px;border:0;border-radius:9px;background:transparent;color:rgba(255,255,255,.6);font-size:15px;cursor:pointer;display:grid;place-items:center;}
 .nav button:hover:not(:disabled){background:rgba(255,255,255,.08);color:#fff;}
 .nav button:disabled{opacity:.28;cursor:default;}
 .title{flex:1;text-align:center;font-size:12.5px;color:rgba(255,255,255,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -40,7 +40,8 @@ html,body{margin:0;height:100%;background:transparent;color:#eef2ff;font-family:
 .find span{font-size:11.5px;color:rgba(255,255,255,.55);min-width:46px;text-align:right;font-variant-numeric:tabular-nums;}
 .find button{border:0;background:transparent;color:rgba(255,255,255,.6);cursor:pointer;font-size:11px;padding:3px 5px;border-radius:5px;}
 .ctl{display:flex;gap:2px;margin-left:6px;-webkit-app-region:no-drag;}
-.ctl button{width:40px;font-size:13px;}
+.ctl button{width:42px;height:var(--bar);border-radius:0;font-size:12px;}
+.ctl{align-self:stretch;margin-right:-6px;}
 .ctl button:hover{background:rgba(255,255,255,.1);color:#fff;}
 .ctl button.close:hover{background:#e0384f;}
 .prog{position:absolute;left:0;top:calc(var(--bar) - 2px);height:2px;width:0;background:linear-gradient(90deg,var(--c1),var(--c2));opacity:0;transition:width .4s ease,opacity .3s;}

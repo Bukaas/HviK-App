@@ -28,17 +28,38 @@ let win, view, firstLoad = true;
 // Neues Design (Einstellungen → Design: Neu): Fenster ohne Rahmen und durchsichtig, links Platz für die Leiste,
 // die hinter dem Fenster hervorschaut. Gilt ab App-Start (Umschalten startet die App neu).
 let NEU = false;
-const RAIL_ZONE = 104, PAD = 14, NBAR = 46;  // passen zu shell-neu.html (--zone / --pad / --bar)
+const RAIL_ZONE = 104, PAD = 14, NBAR = 36;  // passen zu shell-neu.html (--zone / --pad / --bar)
 const startUrl = () => (NEU ? SITE + '/app/start' : SITE);  // neues Design: eigene Startseite
 
+// "Innen": maximiert, Vollbild, an eine Bildschirmhälfte angedockt oder links am Bildschirmrand -> Leiste ins Fenster,
+// kein durchsichtiger Rand (Fenster reicht bis an die Bildschirmkante, Knöpfe sitzen in der Ecke)
+function isInner() {
+  if (win.isMaximized() || win.isFullScreen()) return true;
+  const { screen } = require('electron');
+  const b = win.getBounds(), wa = screen.getDisplayMatching(b).workArea, near = (a, c) => Math.abs(a - c) <= 6;
+  const left = b.x <= wa.x + 6, right = near(b.x + b.width, wa.x + wa.width), full = near(b.y, wa.y) && near(b.y + b.height, wa.y + wa.height);
+  return left || (full && right);
+}
+let innerNow = null;
 function layout() {
   const [w, h] = win.getContentSize();
   if (!NEU) { view.setBounds({ x: 0, y: BAR, width: w, height: Math.max(0, h - BAR) }); return; }
-  const max = win.isMaximized() || win.isFullScreen();
-  const pad = max ? 0 : PAD;
+  const inner = isInner();
+  const pad = inner ? 0 : PAD;
   view.setBounds({ x: RAIL_ZONE, y: pad + NBAR, width: Math.max(0, w - RAIL_ZONE - pad), height: Math.max(0, h - pad - NBAR - pad) });
-  view.setBorderRadius(max ? 0 : 16);
-  win.webContents.send('max', max);
+  view.setBorderRadius(inner ? 0 : 16);
+  if (inner !== innerNow) { innerNow = inner; win.webContents.send('max', inner); }
+}
+// Andocken wie bei Windows: Fenster an den linken/rechten Rand ziehen = Hälfte, nach oben = maximiert
+// (bei rahmenlosen, durchsichtigen Fenstern macht Windows das nicht zuverlässig selbst)
+let dockFrom = null;
+function snapAfterMove() {
+  if (!NEU || win.isMaximized()) return;
+  const { screen } = require('electron');
+  const c = screen.getCursorScreenPoint(), d = screen.getDisplayNearestPoint(c), wa = d.workArea, b = d.bounds;
+  if (c.y <= b.y + 2) { dockFrom = win.getBounds(); win.maximize(); return; }
+  if (c.x <= b.x + 2) { dockFrom = dockFrom || win.getBounds(); win.setBounds({ x: wa.x, y: wa.y, width: Math.round(wa.width / 2), height: wa.height }); }
+  else if (c.x >= b.x + b.width - 3) { dockFrom = dockFrom || win.getBounds(); const w2 = Math.round(wa.width / 2); win.setBounds({ x: wa.x + wa.width - w2, y: wa.y, width: w2, height: wa.height }); }
 }
 
 function sendNav() {
@@ -70,7 +91,8 @@ function createWindow() {
   if (b.max) win.maximize();
   win.loadFile(path.join(__dirname, NEU ? 'shell-neu.html' : 'shell.html'));
   if (NEU) {
-    for (const ev of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(ev, layout);
+    for (const ev of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'move']) win.on(ev, layout);
+    win.on('moved', snapAfterMove);
     win.webContents.on('did-finish-load', () => { layout(); applyDesign(); });
   }
   win.once('ready-to-show', () => { if (!process.argv.includes('--versteckt')) win.show(); });  // Autostart: nur ins Symbol unten rechts
@@ -450,7 +472,7 @@ function setIgnoring(v) {
 }
 setInterval(() => {
   if (!NEU || !win || win.isDestroyed() || !win.isVisible()) return;
-  if (win.isMaximized() || win.isFullScreen() || resizing) return setIgnoring(false);
+  if (innerNow || resizing) return setIgnoring(false);
   const { screen } = require('electron');
   const c = screen.getCursorScreenPoint(), b = win.getContentBounds(), x = c.x - b.x, y = c.y - b.y;
   const inside = x >= 0 && y >= 0 && x < b.width && y < b.height;
