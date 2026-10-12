@@ -176,17 +176,28 @@ rail.addEventListener('mouseenter', () => { clearTimeout(closeT); rail.classList
 rail.addEventListener('mouseleave', () => { clearTimeout(closeT); closeT = setTimeout(() => rail.classList.remove('open'), 420); });
 
 // ---- Durchsichtige Stellen lassen Klicks zum Desktop durch ----
-let ign = null;
-const setIgn = v => { if (v !== ign) { ign = v; shellApi.ignore(v); } };
-document.addEventListener('mousemove', e => setIgn(!root.classList.contains('max') && !e.target.closest('.hit')));
-document.addEventListener('mouseleave', () => { if (!resizing) setIgn(!root.classList.contains('max')); });
+// Die App fragt selbst ab, wo der Mauszeiger ist - hier melden wir nur, wo Fenster, Leiste und Ränder liegen.
+function sendRects() {
+  const rs = [...document.querySelectorAll('.hit')].map(el => el.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0)
+    .map(r => ({ x: Math.floor(r.left), y: Math.floor(r.top), w: Math.ceil(r.width), h: Math.ceil(r.height) }));
+  shellApi.hitRects(rs);
+}
+setInterval(sendRects, 250);
+window.addEventListener('resize', sendRects);
+rail.addEventListener('transitionend', sendRects);
 
 // ---- Größe ziehen an den Rändern ----
+// Taste runter -> Bewegungen (Bildschirm-Koordinaten) an die App, bis losgelassen wird
 let resizing = false;
 document.querySelectorAll('.rz').forEach(h => {
-  h.addEventListener('pointerdown', e => { if (e.button !== 0) return; resizing = true; h.setPointerCapture(e.pointerId); shellApi.resize(h.dataset.edge); });
-  const end = () => { if (resizing) { resizing = false; shellApi.resize(null); } };
-  h.addEventListener('pointerup', end); h.addEventListener('lostpointercapture', end);
+  h.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    resizing = true; h.setPointerCapture(e.pointerId);
+    shellApi.resize({ phase: 'start', edge: h.dataset.edge, x: e.screenX, y: e.screenY });
+  });
+  h.addEventListener('pointermove', e => { if (resizing && (e.buttons & 1)) shellApi.resize({ phase: 'move', x: e.screenX, y: e.screenY }); });
+  const end = () => { if (resizing) { resizing = false; shellApi.resize({ phase: 'end' }); } };
+  h.addEventListener('pointerup', end); h.addEventListener('lostpointercapture', end); h.addEventListener('pointercancel', end);
 });
 
 // ---- Aktiver Bereich nach Adresse ----
@@ -207,7 +218,7 @@ shellApi.on('nav', s => {
   markActive(s.url);
 });
 shellApi.on('palette', p => { root.dataset.palette = p || 'ozean'; });
-shellApi.on('max', m => { root.classList.toggle('max', !!m); $('w-max').textContent = m ? '❐' : '☐'; $('w-max').title = m ? 'Verkleinern' : 'Maximieren'; if (m) setIgn(false); });
+shellApi.on('max', m => { root.classList.toggle('max', !!m); $('w-max').textContent = m ? '❐' : '☐'; $('w-max').title = m ? 'Verkleinern' : 'Maximieren'; sendRects(); });
 shellApi.on('badges', b => {
   $('bdg-bell').textContent = b.bell || '';
   $('onl-n').textContent = b.onl || '–';

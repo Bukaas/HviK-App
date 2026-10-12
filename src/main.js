@@ -438,21 +438,41 @@ function applyDesign() {
 }
 
 // ---------- Neues Design: Fensterknöpfe, Durchklicken, Größe ziehen, Zähler in der Leiste ----------
-ipcMain.on('win-ignore', (e, v) => { if (NEU && win && e.sender === win.webContents) win.setIgnoreMouseEvents(!!v, { forward: true }); });
-let resizing = null;
-ipcMain.on('win-resize', (e, edge) => {
-  if (resizing) { clearInterval(resizing); resizing = null; }
-  if (!NEU || !win || !edge || win.isMaximized() || e.sender !== win.webContents) return;
+// Durchklicken: Die Fensterleiste meldet, wo Fenster, Leiste und Ränder liegen (hitRects). Der Hauptprozess schaut alle 30 ms,
+// ob der Mauszeiger auf einer davon ist - Mausereignisse der Seite reichen nicht (über der Zieh-Fläche oben kommen keine an).
+let hitRects = [], ignoring = false;
+ipcMain.on('win-hit-rects', (e, rects) => { if (NEU && win && e.sender === win.webContents && Array.isArray(rects)) hitRects = rects; });
+function setIgnoring(v) {
+  if (v === ignoring || !win || win.isDestroyed()) return;
+  ignoring = v;
+  win.setIgnoreMouseEvents(v, { forward: true });
+}
+setInterval(() => {
+  if (!NEU || !win || win.isDestroyed() || !win.isVisible()) return;
+  if (win.isMaximized() || win.isFullScreen() || resizing) return setIgnoring(false);
   const { screen } = require('electron');
-  const start = screen.getCursorScreenPoint(), b = win.getBounds(), [mw, mh] = win.getMinimumSize(), began = Date.now();
-  resizing = setInterval(() => {
-    if (Date.now() - began > 60000) { clearInterval(resizing); resizing = null; return; }  // Sicherung, falls das Loslassen verloren geht
-    const p = screen.getCursorScreenPoint(), dx = p.x - start.x, dy = p.y - start.y, nb = { ...b };
-    if (edge.includes('e')) nb.width = Math.max(mw, b.width + dx);
-    if (edge.includes('s')) nb.height = Math.max(mh, b.height + dy);
-    if (edge.includes('n')) { nb.height = Math.max(mh, b.height - dy); nb.y = b.y + b.height - nb.height; }
-    win.setBounds(nb);
-  }, 16);
+  const c = screen.getCursorScreenPoint(), b = win.getContentBounds(), x = c.x - b.x, y = c.y - b.y;
+  const inside = x >= 0 && y >= 0 && x < b.width && y < b.height;
+  setIgnoring(inside && !hitRects.some(r => x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h));
+}, 30);
+ipcMain.on('win-ignore', () => { /* alt (0.17.0): jetzt macht das die Abfrage oben */ });
+// Größe ziehen: die Fensterleiste meldet Start, jede Bewegung (Bildschirm-Koordinaten, solange die Taste gedrückt ist) und das Ende.
+// Kommt das Loslassen nicht an, passiert einfach nichts mehr - das Fenster wächst nicht von selbst weiter.
+let resizing = null;
+ipcMain.on('win-resize', (e, msg) => {
+  if (!NEU || !win || e.sender !== win.webContents) return;
+  if (!msg || msg.phase === 'end') { resizing = null; return; }
+  if (msg.phase === 'start') {
+    if (win.isMaximized() || !/^(n|s|e|ne|se)$/.test(msg.edge)) return;
+    resizing = { edge: msg.edge, sx: msg.x, sy: msg.y, b: win.getBounds(), min: win.getMinimumSize() };
+    return;
+  }
+  if (msg.phase !== 'move' || !resizing) return;
+  const { edge, sx, sy, b, min: [mw, mh] } = resizing, dx = msg.x - sx, dy = msg.y - sy, nb = { ...b };
+  if (edge.includes('e')) nb.width = Math.max(mw, Math.round(b.width + dx));
+  if (edge.includes('s')) nb.height = Math.max(mh, Math.round(b.height + dy));
+  if (edge.includes('n')) { nb.height = Math.max(mh, Math.round(b.height - dy)); nb.y = b.y + b.height - nb.height; }
+  win.setBounds(nb);
 });
 // Glocken-Zahl, Online-Zahl und Profilbild aus der Seite für die Leiste
 async function sendBadges() {
