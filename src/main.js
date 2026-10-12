@@ -29,6 +29,7 @@ let win, view, firstLoad = true;
 // die hinter dem Fenster hervorschaut. Gilt ab App-Start (Umschalten startet die App neu).
 let NEU = false;
 const RAIL_ZONE = 104, PAD = 14, NBAR = 46;  // passen zu shell-neu.html (--zone / --pad / --bar)
+const startUrl = () => (NEU ? SITE + '/app/start' : SITE);  // neues Design: eigene Startseite
 
 function layout() {
   const [w, h] = win.getContentSize();
@@ -108,9 +109,9 @@ function createWindow() {
     firstLoad = true;
     win.webContents.send('offline', desc);
     win.webContents.send('guide', background.getGuide());
-    setTimeout(() => { if (firstLoad) { win.webContents.send('loading'); view.webContents.loadURL(SITE); } }, 15000);  // von selbst nochmal versuchen
+    setTimeout(() => { if (firstLoad) { win.webContents.send('loading'); view.webContents.loadURL(startUrl()); } }, 15000);  // von selbst nochmal versuchen
   });
-  wc.loadURL(SITE);
+  wc.loadURL(startUrl());
   shortcuts(wc);
   shortcuts(win.webContents);
   // aus dem Infobereich geöffnet: offene Update-Frage bzw. "Neu in Version" jetzt zeigen
@@ -167,12 +168,12 @@ ipcMain.on('nav-cmd', (e, cmd) => {
   if (cmd === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
   else if (cmd === 'forward' && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
   else if (cmd === 'reload') wc.reload();
-  else if (cmd === 'home') wc.loadURL(SITE);
+  else if (cmd === 'home') wc.loadURL(startUrl());
   else if (cmd === 'notes') wc.loadURL(SITE + '/app#patchnotes');
   else if (cmd === 'settings') wc.loadURL(SITE + '/app/einstellungen');
   else if (cmd === 'game-open') { const g = background.getRunning(); if (g && g.url) wc.loadURL(SITE + g.url); }
   else if (cmd === 'game-clear') background.setRunning(null);
-  else if (cmd === 'retry') { win.webContents.send('loading'); wc.loadURL(SITE); }
+  else if (cmd === 'retry') { win.webContents.send('loading'); wc.loadURL(startUrl()); }
   else if (cmd === 'update-install') autoUpdater.quitAndInstall(true, true);
 });
 
@@ -268,7 +269,7 @@ function httpError(status) {
 // Verbindung weg/wieder da: Leiste oben zeigt es an; kam die Seite nicht, wird sie neu geladen
 function onNet(ok) {
   if (win) win.webContents.send('net', ok);
-  if (ok && firstLoad) { win.webContents.send('loading'); view.webContents.loadURL(SITE); }
+  if (ok && firstLoad) { win.webContents.send('loading'); view.webContents.loadURL(startUrl()); }
 }
 async function lobbyInfo(code) {
   const info = await siteGet(`/api/mclink/app/${encodeURIComponent(code)}`, true);

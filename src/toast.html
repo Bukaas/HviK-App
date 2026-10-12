@@ -25,6 +25,15 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-famil
 .t.small .n{font-size:14px;}
 .t.small .d{font-size:12px;max-height:1.35em;}
 .shine{position:absolute;inset:0;background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,.08) 45%,transparent 60%);transform:translateX(-100%);animation:shine 1.4s .4s ease-out;}
+/* neues Design: Glas in den Farben der Farbwelt, Leuchtrand im Farbverlauf */
+.neu .t{border:0;border-radius:18px;background:linear-gradient(160deg,var(--pb1),var(--pb2));box-shadow:0 12px 32px rgba(0,0,0,.55);font-family:"Segoe UI",system-ui,sans-serif;}
+.neu .t::after{content:"";position:absolute;inset:0;border-radius:inherit;padding:1.5px;pointer-events:none;background:linear-gradient(135deg,var(--p1),var(--p2) 55%,var(--p3));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:.85;}
+.neu .t::before{width:3px;top:16px;bottom:16px;border-radius:0 3px 3px 0;background:linear-gradient(var(--p1),var(--p2));box-shadow:0 0 12px var(--p2);}
+.neu .ico{border-radius:50%;background:radial-gradient(circle at 30% 25%,rgba(255,255,255,.14),transparent 60%),rgba(255,255,255,.06);box-shadow:inset 0 0 0 1.5px var(--c,var(--p2)),0 0 18px color-mix(in srgb,var(--c,var(--p2)) 45%,transparent);}
+.neu .k{color:var(--c);}
+.neu .b button{border-radius:999px;border-color:rgba(255,255,255,.18);background:rgba(255,255,255,.07);}
+.neu .b button.p{background:linear-gradient(135deg,var(--p1),var(--p2));border-color:transparent;}
 @keyframes in{from{transform:translateX(110%);opacity:0}}
 @keyframes out{to{transform:translateX(110%);opacity:0}}
 @keyframes pop{from{transform:scale(.4);opacity:0}}
@@ -34,7 +43,18 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-famil
 <script>
 const t = JSON.parse(decodeURIComponent(location.hash.slice(1)));
 const COLORS = {leicht: ['#7bd88f', '#13261a'], mittel: ['#4ea8de', '#11202e'], schwer: ['#9b5de5', '#1e1530'], legendär: ['#f4c150', '#2e2410']};
-const [c, cbg] = COLORS[(t.color || '').toLowerCase()] || [t.colorHex || '#ff4d5e', '#2a1418'];
+// neues Design: Farben der Farbwelt (Erfolge behalten ihre Schwierigkeitsfarbe)
+const PAL = {ozean: ['#3ee0ff', '#3b6fff', '#8a5cff', '#0b1838', '#06102a'], aurora: ['#ff8a5c', '#ff2e8a', '#7a5cff', '#1b1038', '#0e1030'],
+             glut: ['#ffb547', '#ff4d3d', '#c2185b', '#221012', '#0f0809'], gift: ['#c6ff5c', '#1fd6a0', '#2b7fff', '#0c1f1e', '#061212'],
+             sakura: ['#ff9ad5', '#b98bff', '#7fc8ff', '#2a1842', '#170e2b'], rot: ['#ff8a3d', '#ff2d48', '#a3122b', '#1e0b10', '#0b0506']};
+const look = t.look && PAL[t.look.palette] ? PAL[t.look.palette] : null;
+let [c, cbg] = COLORS[(t.color || '').toLowerCase()] || [t.colorHex || '#ff4d5e', '#2a1418'];
+if (look) {
+  if (!COLORS[(t.color || '').toLowerCase()]) { c = look[1]; cbg = look[3]; }
+  document.body.classList.add('neu');
+  const r = document.documentElement.style;
+  r.setProperty('--p1', look[0]); r.setProperty('--p2', look[1]); r.setProperty('--p3', look[2]); r.setProperty('--pb1', look[3]); r.setProperty('--pb2', look[4]);
+}
 const box = document.getElementById('t');
 if (t.small) box.classList.add('small');
 box.style.setProperty('--c', c); box.style.setProperty('--cbg', cbg); box.style.setProperty('--out', ((t.seconds || 7) - .45) + 's');

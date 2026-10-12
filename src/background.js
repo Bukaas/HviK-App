@@ -361,6 +361,7 @@ function setGuide(g) { lastGuide = g || null; if (ctx.win) ctx.win.webContents.s
 function start(c) {
   ctx = c;
   toast.setMode(() => settings().toastMode);
+  toast.setLook(() => (settings().design === 'neu' ? { palette: settings().palette || 'ozean' } : null));
   toast.setHandler(async action => {
     if (action.startsWith('open:')) return show(action.slice(5));
     if (action.startsWith('voice:')) {

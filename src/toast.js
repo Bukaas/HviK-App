@@ -10,7 +10,8 @@ const MAX_WAIT = 15 * 60 * 1000;  // so lange dürfen Toasts aufs Ende des Vollb
 const queue = [];
 const active = [];  // [{win, h}] - unten = ältester
 let onAction = null;
-let getMode = () => 'auto';  // 'auto' = nicht während Vollbild-Spielen, 'immer', 'aus'
+let getMode = () => 'auto';
+let getLook = () => null;  // neues Design: { palette } - Popups in den Farben der Farbwelt  // 'auto' = nicht während Vollbild-Spielen, 'immer', 'aus'
 let retry = null;
 
 // Windows fragen, ob gerade etwas im Vollbild läuft (wie "Nicht stören" bei Spielen):
@@ -102,8 +103,8 @@ function show(t) {
   if (getMode() === 'aus' && !t.force) return;
   // gleiche Meldung nicht doppelt in der Warteschlange
   if (queue.some(q => q.title === t.title && q.name === t.name && q.text === t.text)) return;
-  queue.push({ ...t, _at: Date.now() });
+  queue.push({ ...t, look: getLook(), _at: Date.now() });
   next();
 }
 
-module.exports = { show, fullscreen, setHandler: fn => { onAction = fn; }, setMode: fn => { getMode = fn; } };
+module.exports = { show, fullscreen, setHandler: fn => { onAction = fn; }, setMode: fn => { getMode = fn; }, setLook: fn => { getLook = fn; } };
