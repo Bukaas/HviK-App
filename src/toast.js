@@ -13,6 +13,7 @@ let onAction = null;
 let getMode = () => 'auto';
 let getLook = () => null;  // neues Design: { palette } - Popups in den Farben der Farbwelt  // 'auto' = nicht während Vollbild-Spielen, 'immer', 'aus'
 let retry = null;
+let onHeld = null;  // wichtige Meldung (Match bereit) wartet wegen Vollbild -> Bescheid geben (Taskleiste blinkt + Ton)
 
 // Windows fragen, ob gerade etwas im Vollbild läuft (wie "Nicht stören" bei Spielen):
 // 2 = Vollbild-Programm, 3 = Direct3D-Vollbild (Spiel), 4 = Präsentationsmodus
@@ -58,6 +59,7 @@ async function next() {
       const forced = queue.filter(t => t.force);
       queue.splice(0, queue.length, ...queue.filter(t => !t.force));
       forced.forEach(open);
+      for (const t of queue) if (t.urgent && !t._held) { t._held = true; if (onHeld) onHeld(t); }
       clearTimeout(retry);
       retry = setTimeout(next, 15000);
       return;
@@ -98,7 +100,8 @@ ipcMain.on('toast-action', (e, action) => {
 });
 
 /** t = {kind, icon, title, name, text, foot, color|colorHex, buttons: [{label, action}], small, quiet, seconds, force}
- *  force: auch bei "Aus"/Vollbild zeigen (Test-Popup aus den Einstellungen) */
+ *  force: auch bei "Aus"/Vollbild zeigen (Test-Popup aus den Einstellungen)
+ *  urgent: wartet sie wegen Vollbild, blinkt die App in der Taskleiste und es kommt ein Ton */
 function show(t) {
   if (getMode() === 'aus' && !t.force) return;
   // gleiche Meldung nicht doppelt in der Warteschlange
@@ -107,4 +110,4 @@ function show(t) {
   next();
 }
 
-module.exports = { show, fullscreen, setHandler: fn => { onAction = fn; }, setMode: fn => { getMode = fn; }, setLook: fn => { getLook = fn; } };
+module.exports = { show, fullscreen, setHandler: fn => { onAction = fn; }, setMode: fn => { getMode = fn; }, setLook: fn => { getLook = fn; }, setOnHeld: fn => { onHeld = fn; } };

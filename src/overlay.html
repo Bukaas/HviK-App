@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="de" data-palette="ozean">
+<head>
+<meta charset="utf-8">
+<title>HviK Overlay</title>
+<!-- Overlay im Spiel (overlay.js): eigener Fortschritt der laufenden Archipelago-Runde, letzte Items, Hints. Durchklickbar. -->
+<style>
+:root{--c1:#3ee0ff;--c2:#3b6fff;--bg:rgba(8,16,40,.86);}
+html[data-palette="aurora"]{--c1:#ff8a5c;--c2:#ff2e8a;--bg:rgba(20,12,44,.86);}
+html[data-palette="glut"]{--c1:#ffb547;--c2:#ff4d3d;--bg:rgba(28,12,14,.86);}
+html[data-palette="gift"]{--c1:#c6ff5c;--c2:#1fd6a0;--bg:rgba(8,26,24,.86);}
+html[data-palette="sakura"]{--c1:#ff9ad5;--c2:#b98bff;--bg:rgba(30,18,52,.86);}
+html[data-palette="rot"]{--c1:#ff8a3d;--c2:#ff2d48;--bg:rgba(24,8,12,.86);}
+html,body{margin:0;background:transparent;overflow:hidden;font-family:"Segoe UI",system-ui,sans-serif;color:#fff;user-select:none;}
+.o{margin:2px;padding:12px 14px;border-radius:16px;background:var(--bg);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(10px);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--c2) 25%,transparent);transition:opacity .3s;}
+.hd{display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--c1);font-weight:700;}
+.hd span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.dot{width:8px;height:8px;border-radius:50%;background:#ff5d6c;flex:none;}
+.dot.on{background:#5cffb4;box-shadow:0 0 8px #5cffb4;}
+.me{display:flex;align-items:center;gap:8px;margin:8px 0 6px;font-size:14px;font-weight:600;}
+.me i{font-style:normal;font-size:18px;}
+.bar{margin:5px 0;font-size:11.5px;color:rgba(255,255,255,.75);}
+.bar div{display:flex;justify-content:space-between;}
+.bar b{color:#fff;font-weight:600;}
+.tr{height:5px;border-radius:3px;background:rgba(255,255,255,.1);margin-top:3px;overflow:hidden;}
+.tr em{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--c1),var(--c2));}
+.sec{margin-top:8px;padding-top:7px;border-top:1px solid rgba(255,255,255,.08);}
+.sec h4{margin:0 0 4px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.45);font-weight:700;}
+.ln{font-size:12px;line-height:1.35;margin:3px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:rgba(255,255,255,.8);}
+.k-me,.k-player{color:var(--c1);font-weight:600;}
+.k-item-prog{color:#c9a2ff;font-weight:600;} .k-item-useful{color:#7cc4ff;} .k-item-trap{color:#ff7b7b;font-weight:600;} .k-item{color:#ddd;}
+.k-location{color:#8fe3a8;}
+.goal{color:#ffd166;}
+</style>
+</head>
+<body>
+<div class="o" id="o"></div>
+<script>
+const o = document.getElementById('o');
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const bar = (label, have, need) => {
+  const b = el('div', 'bar'), top = el('div'); top.append(el('span', '', label), el('b', '', `${have} / ${need}`));
+  const tr = el('div', 'tr'), fill = el('em'); fill.style.width = Math.min(100, Math.round(100 * have / Math.max(1, need))) + '%'; tr.append(fill);
+  b.append(top, tr); return b;
+};
+ovApi.on(d => {
+  document.documentElement.dataset.palette = d.palette || 'ozean';
+  o.style.opacity = d.opacity || .92;
+  document.body.style.cssText = d.bottom ? 'display:flex;flex-direction:column;justify-content:flex-end;height:100vh;margin:0' : '';  // unten: an die Unterkante
+  o.replaceChildren();
+  const hd = el('div', 'hd'); hd.append(el('span', '', '🧩 ' + d.title), el('i', 'dot' + (d.row && d.row.online ? ' on' : ''))); o.append(hd);
+  const r = d.row;
+  if (r) {
+    const me = el('div', 'me'); me.append(el('i', '', r.icon || '🎮'), el('span', '', r.game || d.me || ''));
+    if (r.goal) me.append(el('span', 'goal', ' · 🏁 Ziel erreicht!'));
+    o.append(me);
+    if (r.goal_items) o.append(bar(r.goal_items.label, r.goal_items.have, r.goal_items.need));
+    if (r.total) o.append(bar('✔ Checks', r.checked || 0, r.total));
+    for (const b of r.loc_bars || []) o.append(bar(b.label, b.have, b.need));
+    if (r.received != null) { const x = el('div', 'bar'); x.append(el('span', '', `📦 ${r.received} Items erhalten`)); o.append(x); }
+  }
+  if (d.lines && d.lines.length) {
+    const s = el('div', 'sec'); s.append(el('h4', '', 'Zuletzt'));
+    for (const l of d.lines.slice().reverse().slice(0, 4)) {
+      const ln = el('div', 'ln');
+      for (const p of l.parts) ln.append(el('span', 'k-' + (p.k || 'text'), p.t));
+      s.append(ln);
+    }
+    o.append(s);
+  }
+  if (d.hints && d.hints.length) {
+    const s = el('div', 'sec'); s.append(el('h4', '', 'Hints'));
+    for (const h of d.hints) {
+      const ln = el('div', 'ln');
+      if (h.mine) ln.append(el('span', '', '💡 Dein '), el('span', 'k-' + h.k, h.item), el('span', '', ' bei ' + h.who + ': '), el('span', 'k-location', h.location));
+      else ln.append(el('span', '', '🔎 ' + h.who + ' braucht '), el('span', 'k-' + h.k, h.item), el('span', '', ' – '), el('span', 'k-location', h.location));
+      s.append(ln);
+    }
+    o.append(s);
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="de" data-palette="ozean">
+<head>
+<meta charset="utf-8">
+<title>HviK Menü</title>
+<!-- Neues Design: kleines Fenster, das neben der Leiste aufgeht – liegt über der Seite. Inhalt kommt von shell-neu.html
+     über die App (fly-show): Untermenüs (Games, Events & Termine) und Live-Fenster (meine Runde, mein Liga-Spiel, mein Turnier-Match). -->
+<style>
+:root{--c1:#3ee0ff;--c2:#3b6fff;--c3:#8a5cff;--bg1:#0e1d44;--bg2:#081230;}
+html[data-palette="aurora"]{--c1:#ff8a5c;--c2:#ff2e8a;--c3:#7a5cff;--bg1:#22163f;--bg2:#140d2c;}
+html[data-palette="glut"]{--c1:#ffb547;--c2:#ff4d3d;--c3:#c2185b;--bg1:#2a1416;--bg2:#170b0c;}
+html[data-palette="gift"]{--c1:#c6ff5c;--c2:#1fd6a0;--c3:#2b7fff;--bg1:#0f2626;--bg2:#081716;}
+html[data-palette="sakura"]{--c1:#ff9ad5;--c2:#b98bff;--c3:#7fc8ff;--bg1:#2f1c4a;--bg2:#1c1132;}
+html[data-palette="rot"]{--c1:#ff8a3d;--c2:#ff2d48;--c3:#a3122b;--bg1:#241015;--bg2:#12080a;}
+html,body{margin:0;background:transparent;overflow:hidden;font-family:"Segoe UI",system-ui,sans-serif;color:#fff;user-select:none;}
+.p{position:relative;padding:12px 10px 10px;box-sizing:border-box;border-radius:20px;
+  background:linear-gradient(160deg,var(--bg1),var(--bg2));border:1px solid rgba(255,255,255,.1);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06);opacity:0;transform:translateX(-14px);transition:opacity .16s,transform .22s cubic-bezier(.2,.9,.25,1.05);}
+.p.on{opacity:1;transform:none;}
+.p::before{content:"";position:absolute;left:0;top:18px;bottom:18px;width:3px;border-radius:3px;background:linear-gradient(180deg,var(--c1),var(--c2),var(--c3));box-shadow:0 0 12px var(--c2);}
+h1{margin:0 0 8px 12px;font:700 11px "Segoe UI";letter-spacing:.2em;text-transform:uppercase;color:var(--c1);}
+h1 a{color:inherit;text-decoration:none;cursor:pointer;}
+h1 a:hover{text-decoration:underline;}
+.i{display:flex;align-items:center;gap:12px;width:100%;padding:8px 10px;margin:0;border:0;border-radius:14px;background:none;color:#fff;text-align:left;cursor:pointer;font:inherit;box-sizing:border-box;}
+.i:hover,.i.on{background:rgba(255,255,255,.07);}
+.ic{flex:none;width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-size:19px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);}
+.i:hover .ic{border-color:color-mix(in srgb,var(--c2) 60%,transparent);box-shadow:0 0 14px color-mix(in srgb,var(--c2) 40%,transparent);}
+.t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}
+.t b{font-size:14px;font-weight:600;white-space:nowrap;}
+.t small{font-size:12px;color:rgba(255,255,255,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.chips{display:flex;gap:5px;margin-top:4px;}
+.chips span{white-space:nowrap;font-size:11.5px;padding:2px 9px;border-radius:999px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.75);}
+.chips span:hover{background:linear-gradient(135deg,var(--c1),var(--c2));border-color:transparent;color:#fff;}
+/* Live-Fenster: Runde, Liga-Spiel, Turnier-Match */
+.w{padding:2px 8px 4px 12px;font-size:13px;}
+.row{display:flex;align-items:center;gap:8px;margin:4px 0 8px;font-size:14px;font-weight:600;}
+.row .big{font-size:20px;}
+.dt{width:8px;height:8px;border-radius:50%;background:#ff5d6c;flex:none;}
+.dt.on{background:#5cffb4;box-shadow:0 0 8px #5cffb4;}
+.bar{margin:6px 0;font-size:12px;color:rgba(255,255,255,.75);}
+.bar div{display:flex;justify-content:space-between;}
+.bar b{color:#fff;}
+.tr{height:5px;border-radius:3px;background:rgba(255,255,255,.1);margin-top:3px;overflow:hidden;}
+.tr em{display:block;height:100%;background:linear-gradient(90deg,var(--c1),var(--c2));border-radius:3px;}
+.mut{color:rgba(255,255,255,.6);font-size:12px;margin:4px 0;}
+.hint{font-size:12px;margin:3px 0;color:rgba(255,255,255,.8);}
+.k-item-prog{color:#c9a2ff;font-weight:600;} .k-item-useful{color:#7cc4ff;} .k-item-trap{color:#ff7b7b;} .k-location{color:#8fe3a8;}
+.btns{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
+.bt{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.07);color:#fff;border-radius:999px;padding:7px 14px;font:600 12.5px "Segoe UI";cursor:pointer;}
+.bt:hover{background:rgba(255,255,255,.14);}
+.bt.pri{background:linear-gradient(135deg,var(--c1),var(--c2));border-color:transparent;}
+.bt.pri:hover{filter:brightness(1.1);}
+.bt:disabled{opacity:.5;cursor:default;}
+.vs{display:flex;align-items:center;gap:8px;margin:6px 0 10px;}
+.vs img,.vs .ph{width:28px;height:28px;border-radius:50%;object-fit:cover;background:rgba(255,255,255,.1);flex:none;}
+.vs b{font-size:13px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.vs i{font-style:normal;color:rgba(255,255,255,.45);font-size:11px;}
+.mp{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:rgba(255,255,255,.75);}
+.ent{display:grid;grid-template-columns:1fr 56px;gap:6px 8px;align-items:center;margin-top:6px;font-size:12.5px;}
+.ent input{width:100%;box-sizing:border-box;padding:6px 8px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.25);color:#fff;font:600 14px "Segoe UI";text-align:center;user-select:text;}
+.ent input:focus{outline:none;border-color:var(--c1);}
+.nav{position:absolute;top:8px;right:8px;display:flex;align-items:center;gap:2px;font:700 10.5px "Segoe UI";color:rgba(255,255,255,.5);}
+.nav button{width:24px;height:24px;border:0;border-radius:8px;background:rgba(255,255,255,.07);color:#fff;cursor:pointer;font-size:14px;line-height:1;}
+.nav button:hover{background:linear-gradient(135deg,var(--c1),var(--c2));}
+.has-nav h1{margin-right:76px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.msg{margin-top:8px;font-size:12px;}
+.msg:empty{display:none;}
+.msg.bad{color:#ff8a8a;} .msg.ok{color:#5cffb4;}
+</style>
+</head>
+<body>
+<div class="p" id="p"></div>
+<script>
+const p = document.getElementById('p');
+const go = path => shellApi.cmd('go:' + path);
+const size = () => shellApi.cmd('fly:size:' + Math.ceil(p.offsetHeight + 2));
+shellApi.on('palette', pal => { document.documentElement.dataset.palette = pal || 'ozean'; });
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const btn = (label, cls, fn) => { const b = el('button', 'bt' + (cls ? ' ' + cls : ''), label); b.type = 'button'; b.onclick = fn; return b; };
+const bar = (label, have, need) => {
+  const b = el('div', 'bar'), top = el('div'); top.append(el('span', '', label), el('b', '', `${have} / ${need}`));
+  const tr = el('div', 'tr'), f = el('em'); f.style.width = Math.min(100, Math.round(100 * have / Math.max(1, need))) + '%'; tr.append(f); b.append(top, tr); return b;
+};
+const typing = () => document.activeElement && document.activeElement.tagName === 'INPUT';
+let cur = null;
+
+function head(text, link) {
+  const h = el('h1'), a = el('a', '', text);
+  if (link) a.onclick = () => go(link);
+  h.append(a); return h;
+}
+// Untermenü (Games / Events & Termine)
+function list(g) {
+  p.append(head(g.title + ' – Übersicht →', g.go));
+  for (const it of g.items) {
+    const b = el('button', 'i' + (it.on ? ' on' : ''));
+    const t = el('span', 't'); t.append(el('b', '', it.label), el('small', '', it.sub || ''));
+    if (it.chips) {  // Abkürzungen direkt zu Unterseiten (z. B. Valorant: Lineups, Solo, Duo)
+      const c = el('span', 'chips');
+      for (const [label, path] of it.chips) { const x = el('span', '', label); x.onclick = e => { e.stopPropagation(); go(path); }; c.append(x); }
+      t.append(c);
+    }
+    b.append(el('span', 'ic', it.icon), t);
+    b.onclick = () => go(it.go);
+    p.append(b);
+  }
+}
+// Meine laufende Archipelago-Runde: Welt-Infos + ▶ Spielen
+function round(r) {
+  p.append(head('🧩 ' + (r.title || 'Archipelago') + ' →', r.url));
+  const w = el('div', 'w'), x = r.row;
+  if (x) {
+    const row = el('div', 'row'); row.append(el('span', 'big', x.icon || '🎮'), el('span', '', x.game || r.slot || ''), el('i', 'dt' + (x.online ? ' on' : '')));
+    w.append(row);
+    if (x.goal) w.append(el('div', 'mut', '🏁 Ziel erreicht!'));
+    if (x.goal_items) w.append(bar(x.goal_items.label, x.goal_items.have, x.goal_items.need));
+    if (x.total) w.append(bar('✔ Checks', x.checked || 0, x.total));
+    for (const b of x.loc_bars || []) w.append(bar(b.label, b.have, b.need));
+    if (x.received != null) w.append(el('div', 'mut', `📦 ${x.received} Items erhalten · ${x.online ? 'du bist verbunden' : 'nicht verbunden'}`));
+  } else w.append(el('div', 'mut', 'Welt-Infos kommen gleich …'));
+  for (const h of r.hints || []) {
+    const d = el('div', 'hint'); d.append('💡 Dein ', el('span', 'k-' + h.k, h.item), ` bei ${h.finder}: `, el('span', 'k-location', h.location)); w.append(d);
+  }
+  const bs = el('div', 'btns');
+  bs.append(btn('▶ Spielen', 'pri', () => go(`/events/archipelago/runde/${r.id}?spielen=1#anleitung`)), btn('Zur Runde', '', () => go(r.url)));
+  w.append(bs); p.append(w);
+}
+// Mein Liga-Spiel: Maps direkt hier eintragen / bestätigen
+function liga(g) {
+  p.append(head(`⚔️ ${g.league} →`, g.url));
+  const w = el('div', 'w');
+  const vs = el('div', 'vs');
+  const side = s => {
+    const n = g[s], d = el('span');
+    d.style.cssText = 'display:flex;align-items:center;gap:6px;min-width:0;flex:1' + (s === 'b' ? ';justify-content:flex-end' : '');
+    const img = n.avatar ? Object.assign(el('img'), { src: n.avatar, alt: '' }) : el('span', 'ph');
+    const nm = el('b', '', g.me === s ? 'Du' : n.name);
+    if (s === 'a') d.append(img, nm); else d.append(nm, img);
+    return d;
+  };
+  vs.append(side('a'), el('i', '', 'vs'), side('b'));
+  w.append(vs);
+  g.done.forEach((sc, i) => { const m = el('div', 'mp'); m.append(el('span', '', `Map ${i + 1}`), el('b', '', `${sc[0]} : ${sc[1]} ✅`)); w.append(m); });
+  const msg = el('div', 'msg');
+  const act = async (action, body) => {
+    w.querySelectorAll('button,input').forEach(x => { x.disabled = true; });
+    const r = await shellApi.liga(g.id, action, body || {});
+    msg.className = 'msg ' + (r && r.ok ? 'ok' : 'bad');
+    msg.textContent = (r && r.message) || (r && r.ok ? '✅ Erledigt.' : 'Das hat nicht geklappt.');
+    w.querySelectorAll('button,input').forEach(x => { x.disabled = false; });
+    if (document.activeElement) document.activeElement.blur();
+    size();
+  };
+  const name = `Map ${g.map_no}`, full = name + (g.map ? ` · ${g.map}` : '');
+  if (g.state === 'start') {
+    w.append(el('div', 'mut', `▶️ Starten bis ${g.until} Uhr – erst danach könnt ihr Ergebnisse eintragen. Ohne Start verfällt es ohne Punkte.`));
+    const bs = el('div', 'btns');
+    bs.append(btn('▶️ Match starten', 'pri', () => act('starten')));
+    w.append(bs);
+  } else if (g.state === 'enter') {
+    if (g.map) w.append(el('div', 'mut', `🗺️ ${full}`));
+    const bs = el('div', 'btns');
+    bs.append(btn(`📨 ${name} Ergebnis eintragen`, 'pri', () => go(`${g.url}?eintragen=${g.id}`)));
+    w.append(bs);
+  } else if (g.state === 'confirm') {
+    w.append(el('div', 'mut', `📋 Dein Gegner meldet ${full}: ${g.pending[0]} : ${g.pending[1]} – stimmt das?`));
+    const bs = el('div', 'btns');
+    bs.append(btn('✅ Stimmt', 'pri', () => act('map_bestaetigen')), btn('❌ Stimmt nicht', '', () => act('map_ablehnen')));
+    w.append(bs);
+  } else w.append(el('div', 'mut', `⏳ ${full}: ${g.pending[0]} : ${g.pending[1]} – wartet auf Bestätigung.`));
+  w.append(msg);
+  const bs2 = el('div', 'btns'); bs2.append(btn('Zur Liga', '', () => go(g.url))); w.append(bs2);
+  p.append(w);
+}
+// Lobby / Termin: kurzes Info-Fenster
+function info(x) {
+  p.append(head(`${x.icon} ${x.title}`, x.url));
+  const w = el('div', 'w');
+  w.append(el('div', 'row', x.name));
+  for (const l of x.lines || []) w.append(el('div', 'mut', l));
+  const bs = el('div', 'btns'); bs.append(btn(x.btn || 'Öffnen', 'pri', () => go(x.url))); w.append(bs);
+  p.append(w);
+}
+// Mein Turnier-Match
+function match(m) {
+  p.append(head(`🏆 ${m.tournament} →`, m.url));
+  const w = el('div', 'w');
+  w.append(el('div', 'row', `Spiel ${m.number}: ${m.me} vs ${m.opponent}`));
+  if (m.confirm) w.append(el('div', 'mut', `📋 Gemeldet: ${m.reported} – bitte bestätigen.`));
+  const msg = el('div', 'msg');
+  const bs = el('div', 'btns');
+  bs.append(btn(m.confirm ? '✅ Zum Bestätigen' : '⚔️ Zum Match', 'pri', () => go(m.url)),
+            btn('🔊 In meinen Voice-Kanal', '', async () => {
+              const r = await shellApi.voice(m.id, m.side);
+              msg.className = 'msg ' + (r && r.ok ? 'ok' : 'bad');
+              msg.textContent = (r && r.message) || (r && r.ok ? 'Verschoben.' : 'Bist du schon in einem Voice-Kanal im Discord?');
+              size();
+            }));
+  w.append(bs, msg); p.append(w);
+}
+
+shellApi.on('fly-show', g => {
+  const same = cur && g.kind === cur.kind && g.key === cur.key && (!g.nav || !cur.nav || g.nav.n === cur.nav.n);  // nur neue Daten fürs offene Fenster -> nicht neu einblenden
+  if (same && typing()) return;  // gerade am Tippen - nicht wegwischen
+  cur = g;
+  p.replaceChildren();
+  if (g.kind === 'round') round(g.data);
+  else if (g.kind === 'liga') liga(g.data);
+  else if (g.kind === 'match') match(g.data);
+  else if (g.kind === 'info') info(g.data);
+  else list(g);
+  // mehrere Sachen laufen: ‹ 1/2 › zum Durchblättern
+  p.classList.toggle('has-nav', !!(g.nav && g.nav.n > 1));
+  if (g.nav && g.nav.n > 1) {
+    const n = el('div', 'nav');
+    const prev = el('button', '', '‹'), next = el('button', '', '›');
+    prev.type = next.type = 'button';
+    prev.onclick = () => shellApi.cmd('fly:nav:-1');
+    next.onclick = () => shellApi.cmd('fly:nav:1');
+    n.append(prev, el('span', '', `${g.nav.i}/${g.nav.n}`), next);
+    p.append(n);
+  }
+  size();
+  if (!same) { p.classList.remove('on'); void p.offsetWidth; p.classList.add('on'); }
+});
+shellApi.on('fly-hide', () => { p.classList.remove('on'); cur = null; });
+document.documentElement.addEventListener('mouseenter', () => shellApi.cmd('fly:in'));
+// Beim Tippen (Liga-Ergebnis) nicht zugehen, nur weil die Maus kurz rausrutscht
+document.documentElement.addEventListener('mouseleave', () => { if (!typing()) shellApi.cmd('fly:out'); });
+document.addEventListener('focusout', () => setTimeout(() => { if (!typing() && !document.documentElement.matches(':hover')) shellApi.cmd('fly:out'); }, 50));
+</script>
+</body>
+</html>

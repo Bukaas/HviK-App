@@ -22,7 +22,7 @@ html,body{margin:0;height:100%;background:transparent;color:#eef2ff;font-family:
   background:radial-gradient(700px 420px at 10% -10%,color-mix(in srgb,var(--c1) 26%,transparent),transparent 60%),
              radial-gradient(800px 600px at 110% 110%,color-mix(in srgb,var(--c3) 24%,transparent),transparent 60%),linear-gradient(160deg,var(--bg1),var(--bg2));
   box-shadow:0 6px 22px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.07);}
-.strip{position:absolute;left:0;right:0;top:0;height:var(--bar);display:flex;align-items:center;gap:6px;padding:0 6px 0 16px;-webkit-app-region:drag;}
+.strip{position:absolute;left:0;right:0;top:0;height:var(--bar);display:flex;align-items:center;gap:6px;padding:0 6px 0 16px;cursor:default;}  /* Ziehen macht die App selbst (sonst kommt kein Doppelklick an) */
 .nav{display:flex;gap:2px;-webkit-app-region:no-drag;}
 .nav button,.ctl button{width:30px;height:28px;border:0;border-radius:9px;background:transparent;color:rgba(255,255,255,.6);font-size:15px;cursor:pointer;display:grid;place-items:center;}
 .nav button:hover:not(:disabled){background:rgba(255,255,255,.08);color:#fff;}
@@ -93,6 +93,38 @@ html,body{margin:0;height:100%;background:transparent;color:#eef2ff;font-family:
 @media (max-height:780px){.it{height:36px;} .logo{width:38px;height:38px;} .rail{top:70px;bottom:70px;} .me{width:36px;height:36px;}}
 @media (max-height:700px){.rail .it.extra{display:none;}}
 
+/* Live-Teil der Leiste: Kacheln für das, was gerade läuft (Ring = Fortschritt), Profilbilder von wer online ist */
+.nd{position:absolute;top:6px;right:8px;width:8px;height:8px;border-radius:50%;background:var(--c1);box-shadow:0 0 0 2px var(--rail2),0 0 10px var(--c1);display:none;z-index:1;}
+.nd.on{display:block;}
+/* zwischen Strich und Glocke: scrollt, wenn mehr läuft als Platz ist (Glocke, Online, Einstellungen, Profil bleiben fest) */
+.sep{flex:none;width:26px;height:1px;background:rgba(255,255,255,.12);margin:6px 0 4px;}
+.sep[hidden]{display:none;}
+.live{flex:1;min-height:6px;width:100%;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;align-items:center;gap:8px;padding:4px 0 8px;
+  scrollbar-width:none;-webkit-mask:linear-gradient(transparent,#000 6px,#000 calc(100% - 10px),transparent);mask:linear-gradient(transparent,#000 6px,#000 calc(100% - 10px),transparent);}
+.live::-webkit-scrollbar{display:none;}
+.lv{position:relative;flex:none;width:42px;height:42px;border:0;border-radius:50%;cursor:pointer;padding:0;display:grid;place-items:center;color:#fff;
+  background:conic-gradient(var(--c1) calc(var(--p, 0) * 1%), rgba(255,255,255,.1) 0);transition:transform .15s;}
+.lv::before{content:"";position:absolute;inset:3px;border-radius:50%;background:radial-gradient(circle at 50% 35%,color-mix(in srgb,var(--c2) 22%,var(--rail1)),var(--rail2));}
+.lv:hover{transform:scale(1.08);}
+.lv > span{position:relative;font-size:18px;line-height:1;}
+.lv > small{position:relative;font:800 10.5px "Segoe UI";color:var(--light);}
+.lv i{position:absolute;right:0;bottom:1px;width:10px;height:10px;border-radius:50%;background:#ff5d6c;box-shadow:0 0 0 2px var(--rail2);}
+.lv i.on{background:#5cffb4;}
+.lv b{position:absolute;right:-3px;top:-3px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:var(--c2);font:800 9.5px/15px "Segoe UI";box-shadow:0 0 0 2px var(--rail2);}
+.lv.hot{animation:hot 1.8s ease-in-out infinite;}
+@keyframes hot{50%{box-shadow:0 0 0 4px color-mix(in srgb,var(--c1) 35%,transparent),0 0 18px var(--c1);}}
+.avs{flex:0 1 auto;min-height:0;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:7px;padding:4px 0 6px;}
+.av{position:relative;flex:none;width:30px;height:30px;border-radius:50%;border:0;padding:0;cursor:pointer;background:#2a3350 center/cover;
+  box-shadow:0 0 0 2px var(--rail2),0 0 0 3.5px #5cffb4;transition:transform .15s;}
+.av:hover{transform:scale(1.12);}
+.av.play::after{content:"🎮";position:absolute;right:-6px;bottom:-5px;font-size:10px;}
+.av span{font:700 12px/30px "Segoe UI";color:#fff;}
+.ldots{display:flex;gap:4px;margin-top:-2px;}
+.ldots i{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.22);}
+.ldots i.hot{background:color-mix(in srgb,var(--c1) 55%,transparent);}
+.ldots i.on{background:var(--c1);box-shadow:0 0 6px var(--c1);}
+@media (max-height:780px){.lv{width:38px;height:38px;}}
+
 /* Ränder zum Größe-Ziehen (im durchsichtigen Rand um das Fenster) */
 .rz{position:fixed;z-index:3;}
 .rz.e{right:0;top:var(--pad);bottom:var(--pad);width:var(--pad);cursor:ew-resize;}
@@ -115,17 +147,15 @@ html,body{margin:0;height:100%;background:transparent;color:#eef2ff;font-family:
 <nav class="rail hit" id="rail">
   <span class="logo" data-go="/app/start" title="HviK Community – Startseite"></span>
   <button class="it" data-go="/app/start" data-m="^/(app/start)?$" title="Startseite"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg></button>
-  <button class="it" data-go="/events/archipelago" data-m="^/events/archipelago" title="Archipelago"><svg viewBox="0 0 24 24"><path d="M9 3h6v4a2 2 0 1 0 0 4v4h-4a2 2 0 1 1-4 0H3V9h4a2 2 0 1 0 0-4h2z"/></svg></button>
-  <button class="it" data-go="/tournaments" data-m="^/tournaments" title="Turniere"><svg viewBox="0 0 24 24"><path d="M7 4h10v4a5 5 0 0 1-10 0z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/><path d="M12 13v4M8 21h8M9 17h6"/></svg></button>
-  <button class="it" data-go="/liga" data-m="^/liga" title="Liga"><svg viewBox="0 0 24 24"><path d="M5 19L19 5M15 5h4v4"/><path d="M19 19L5 5M9 5H5v4"/></svg></button>
-  <button class="it" data-go="/events" data-m="^/(events|termine)(/|$)(?!archipelago)" title="Events &amp; Termine"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></button>
-  <button class="it extra" data-go="/lineups" data-m="^/lineups" title="Valorant Lineups"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
-  <button class="it extra" data-go="/games/minecraft" data-m="^/games/minecraft" title="Minecraft HviK Link"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M4 10h16M10 5v14"/></svg></button>
-  <button class="it extra" data-go="/leaderboards" data-m="^/leaderboards" title="Leaderboards"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6"/></svg></button>
-  <span class="grow"></span>
+  <button class="it" data-go="/app/games" data-fly="games" data-m="^/(app/(games|valorant)|lineups|games/|events/archipelago)" title="Games"><span class="nd" id="nd-games"></span><svg viewBox="0 0 24 24"><path d="M7 7h10a5 5 0 0 1 4.9 6l-.6 3a2.6 2.6 0 0 1-4.6 1.1L15 15H9l-1.7 2.1a2.6 2.6 0 0 1-4.6-1.1l-.6-3A5 5 0 0 1 7 7z"/><path d="M8 10v3M6.5 11.5h3"/><path d="M15.5 10.5h.01M17.5 12.5h.01"/></svg></button>
+  <button class="it" data-go="/spiele" data-fly="spiele" data-m="^/spiele" title="In-App Games"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="11" height="15" rx="2" transform="rotate(-12 8.5 13.5)"/><rect x="10" y="3" width="11" height="15" rx="2" transform="rotate(10 15.5 10.5)"/><path d="M15.5 8.5l1.2 2.2-1.2 2.2-1.2-2.2z"/></svg></button>
+  <button class="it" data-go="/app/events" data-fly="events" data-m="^/(app/events|liga|events|tournaments|turnier|termine)" title="Events &amp; Termine"><span class="nd" id="nd-events"></span><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M8 14h2M12 14h2M8 17h2"/></svg></button>
+  <button class="it" data-go="/leaderboards" data-m="^/leaderboards" title="Leaderboard"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6"/></svg></button>
+  <span class="sep" id="sep" hidden></span>
+  <div class="live" id="live"></div>
   <button class="it" data-site="bell" title="Benachrichtigungen"><svg viewBox="0 0 24 24"><path d="M6 9a6 6 0 0 1 12 0c0 6 2 8 2 8H4s2-2 2-8"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span class="bdg" id="bdg-bell"></span></button>
   <button class="onl" data-site="online" title="Wer ist gerade online?"><em></em><span id="onl-n">–</span></button>
-  <button class="it" data-go="/app/einstellungen" data-m="^/app/einstellungen" title="Einstellungen"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg></button>
+  <button class="it" data-go="/app/einstellungen" data-m="^/app/einstellungen" title="Einstellungen"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   <button class="me" id="me" data-site="user" title="Dein Profil"></button>
 </nav>
 
@@ -166,15 +196,149 @@ const root = document.documentElement;
 for (const [id, c] of [['b-back', 'back'], ['b-fwd', 'forward'], ['b-reload', 'reload'], ['b-retry', 'retry'], ['b-notes', 'notes'],
                        ['b-game', 'game-open'], ['b-game-x', 'game-clear'], ['w-min', 'win-min'], ['w-max', 'win-max'], ['w-close', 'win-close']])
   $(id).addEventListener('click', () => shellApi.cmd(c));
-$('strip').addEventListener('dblclick', e => { if (e.target === $('strip') || e.target === $('title')) shellApi.cmd('win-max'); });
+// Fenster ziehen über die obere Leiste: selbst gebaut statt Windows-Ziehfläche - so kommt der Doppelklick an
+// (groß / wieder klein) und ein angedocktes oder maximiertes Fenster bekommt beim Wegziehen seine alte Größe zurück
+const onStrip = e => e.target === $('strip') || e.target === $('title');
+let dragging = false;
+$('strip').addEventListener('pointerdown', e => {
+  if (e.button !== 0 || !onStrip(e) || e.detail > 1) return;
+  dragging = true; $('strip').setPointerCapture(e.pointerId);
+  shellApi.drag('start');
+});
+const dragEnd = () => { if (dragging) { dragging = false; shellApi.drag('end'); } };
+$('strip').addEventListener('pointerup', dragEnd);
+$('strip').addEventListener('lostpointercapture', dragEnd);
+$('strip').addEventListener('pointercancel', dragEnd);
+window.addEventListener('blur', dragEnd);
+$('strip').addEventListener('dblclick', e => { if (onStrip(e)) { dragEnd(); shellApi.cmd('win-max'); } });
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => shellApi.cmd('go:' + b.dataset.go)));
 document.querySelectorAll('[data-site]').forEach(b => b.addEventListener('click', () => shellApi.cmd('site:' + b.dataset.site)));
 
 // ---- Leiste: fährt beim Drüberfahren raus, mit kurzer Verzögerung wieder rein ----
 const rail = $('rail');
 let closeT = null;
+// Untermenüs: Maus auf Games / Events & Termine -> daneben geht ein kleines Fenster mit den Unterpunkten auf
+const FLY = {
+  games: { title: 'Games', go: '/app/games', items: [
+    { icon: '🎯', label: 'Valorant', sub: 'Lineups, Liga Solo & Duo', go: '/app/valorant', m: '^/(app/valorant|lineups)',
+      chips: [['Lineups', '/lineups'], ['Liga Solo', '/liga/valorant-solo'], ['Liga Duo', '/liga/valorant-duo']] },
+    { icon: '⛏️', label: 'Minecraft HviK Link', sub: 'Lobbys & gekoppelte Welten', go: '/games/minecraft', m: '^/games/minecraft' },
+    { icon: '🧩', label: 'Archipelago', sub: 'Runden & alle Spiele', go: '/events/archipelago', m: '^/events/archipelago' },
+  ] },
+  spiele: { title: 'In-App Games', go: '/spiele', items: [
+    { icon: '🏠', label: 'Spielhaus', sub: 'Rumlaufen, andere treffen, an Tische setzen', go: '/spiele/welt', m: '^/spiele/(welt|tisch)' },
+    { icon: '🃏', label: 'Memory', sub: 'Paare finden – 2 bis 4 Spieler', go: '/spiele/memory', m: '^/spiele/memory' },
+    { icon: '♠️', label: 'Poker · Schwimmen · Mau Mau', sub: 'kommt bald', go: '/spiele', m: '^/spiele/?$' },
+  ] },
+  events: { title: 'Events & Termine', go: '/app/events', items: [
+    { icon: '🏅', label: 'Liga', sub: 'Solo & Duo – Rangliste und Spiele', go: '/liga', m: '^/liga' },
+    { icon: '📅', label: 'Event-Kalender', sub: 'Spieleabende & spontane Runden', go: '/events', m: '^/events/?$' },
+    { icon: '🏆', label: 'Turnier-Kalender', sub: 'Anmeldung, Turnierbaum, Ergebnisse', go: '/tournaments', m: '^/(tournaments|turnier)' },
+  ] },
+};
+let flyOpenFor = null, flyT = null, overFly = false, curPath = '/';
+let flyY = 0;
+function openFly(btn) {
+  clearTimeout(flyT);
+  const key = btn.dataset.fly, g = FLY[key];
+  if (flyOpenFor === key) return;
+  flyOpenFor = key;
+  const r = btn.getBoundingClientRect();
+  flyY = r.top + r.height / 2;
+  shellApi.cmd('fly:open:' + JSON.stringify({ ...g, key, y: flyY,
+    items: g.items.map(it => ({ ...it, on: new RegExp(it.m).test(curPath) })) }));
+}
+// ---- Live-Teil der Leiste: EINE Kachel für das, was gerade läuft (Runde, Liga-Spiel, Match, Lobby, Termin) ----
+// Läuft mehr als eins: Punkte unter der Kachel, im Fenster mit ‹ › durchblättern. Daten kommen von der App (/api/app/leiste).
+let rail$ = null, liveItems = [];
+const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+function left(at) {
+  const m = Math.max(0, Math.round((at * 1000 - Date.now()) / 60000));
+  return m < 60 ? m + 'm' : Math.round(m / 60) + 'h';
+}
+function buildItems(d) {
+  const out = [];
+  for (const g of d.liga || []) out.push({ kind: 'liga', key: 'l' + g.id, data: g, icon: '⚔️', url: g.url,
+    title: `${g.league}: ${g.a.name} vs ${g.b.name} – ` + (g.state === 'start' ? `starten bis ${g.until} Uhr` : `Map ${g.map_no}`),
+    p: 100 * g.done.length / Math.max(1, g.best_of), hot: g.state !== 'wait' });
+  for (const m of d.match || []) out.push({ kind: 'match', key: 'm' + m.id, data: m, icon: '🏆', url: m.url, p: 100, hot: true,
+    title: `${m.tournament}: Spiel ${m.number} – ${m.me} vs ${m.opponent}` });
+  for (const r of d.rounds || []) {
+    const x = r.row || {};
+    out.push({ kind: 'round', key: 'r' + r.id, data: r, icon: x.icon || '🧩', url: r.url, online: !!x.online,
+      p: x.total ? 100 * (x.checked || 0) / x.total : 0, title: `${r.title} – ${x.game || ''}${x.total ? ` · ${x.checked}/${x.total} Checks` : ''}` });
+  }
+  for (const c of d.mc || []) out.push({ kind: 'info', key: 'c' + c.code, icon: '⛏️', url: '/games/minecraft/' + c.code, p: 100, badge: String(c.n),
+    title: `Minecraft-Lobby ${c.name} · ${c.n} dabei`,
+    data: { icon: '⛏️', title: 'Minecraft · HviK Link', name: `Lobby ${c.name}`, lines: [`${c.n} dabei` + (c.mine ? ' · deine Lobby' : '')], btn: c.mine ? 'Öffnen' : 'Beitreten', url: '/games/minecraft/' + c.code } });
+  if (d.next) {
+    const mins = (d.next.at * 1000 - Date.now()) / 60000;
+    out.push({ kind: 'info', key: 'n' + d.next.url, icon: d.next.icon, text: left(d.next.at), url: d.next.url, p: 100 - Math.min(100, mins / 14.4),
+      title: `${d.next.time} Uhr: ${d.next.title}`,
+      data: { icon: d.next.icon, title: 'Nächster Termin', name: d.next.title, lines: [`${d.next.time} Uhr · in ${left(d.next.at).replace('m', ' Min.').replace('h', ' Std.')}`], btn: 'Ansehen', url: d.next.url } });
+  }
+  return out;
+}
+function openLive(btn, it) {
+  clearTimeout(flyT);
+  if (flyOpenFor === 'live:' + it.key) return;
+  flyOpenFor = 'live:' + it.key;
+  const r = btn.getBoundingClientRect();
+  flyY = r.top + r.height / 2;
+  shellApi.cmd('fly:open:' + JSON.stringify({ kind: it.kind, key: it.key, data: it.data, y: flyY }));
+}
+function renderRail() {
+  const d = rail$;
+  if (!d) return;
+  liveItems = buildItems(d);
+  const live = $('live'), top = live.scrollTop;
+  live.replaceChildren();
+  for (const it of liveItems) {
+    const b = mk('button', 'lv' + (it.hot ? ' hot' : ''));
+    b.title = it.title;
+    b.dataset.key = it.key;
+    b.style.setProperty('--p', Math.max(0, Math.min(100, Math.round(it.p || 0))));
+    b.append(it.text ? mk('small', '', it.text) : mk('span', '', it.icon));
+    if (it.online != null) b.append(mk('i', it.online ? 'on' : ''));
+    if (it.badge) b.append(mk('b', '', it.badge));
+    b.addEventListener('click', () => shellApi.cmd('go:' + it.url));
+    b.addEventListener('mouseenter', () => openLive(b, it));
+    live.append(b);
+  }
+  live.scrollTop = top;
+  $('sep').hidden = !liveItems.length;
+  $('nd-games').classList.toggle('on', !!(d.dots && d.dots.games));
+  $('nd-events').classList.toggle('on', !!(d.dots && d.dots.events));
+  // offenes Live-Fenster mit frischen Daten versorgen (oder zu, wenn es das nicht mehr gibt)
+  if (flyOpenFor && flyOpenFor.startsWith('live:')) {
+    const it = liveItems.find(x => 'live:' + x.key === flyOpenFor);
+    if (it) shellApi.cmd('fly:open:' + JSON.stringify({ kind: it.kind, key: it.key, data: it.data, y: flyY }));
+    else { flyOpenFor = null; shellApi.cmd('fly:close'); }
+  }
+  sendRects();
+}
+// beim Scrollen in der Leiste: offenes Live-Fenster zu (es hinge sonst neben der falschen Kachel)
+$('live').addEventListener('scroll', () => { if (flyOpenFor && flyOpenFor.startsWith('live:')) closeFly(0); }, { passive: true });
+shellApi.on('rail', d => { rail$ = d; renderRail(); });
+setInterval(() => { if (rail$ && rail$.next) renderRail(); }, 30000);  // Countdown weiterzählen
+function closeFly(delay) {
+  clearTimeout(flyT);
+  flyT = setTimeout(() => { if (overFly) return; flyOpenFor = null; shellApi.cmd('fly:close'); }, delay);
+}
+document.querySelectorAll('.rail .it, .rail .logo, .rail .onl, .rail .me').forEach(b => b.addEventListener('mouseenter', () => {
+  if (b.dataset.fly) openFly(b); else if (flyOpenFor) closeFly(120);
+}));
+shellApi.on('fly-hover', on => {
+  overFly = on;
+  if (on) { clearTimeout(flyT); clearTimeout(closeT); rail.classList.add('open'); }
+  else { closeFly(300); clearTimeout(closeT); closeT = setTimeout(() => { if (!overFly && !rail.matches(':hover')) rail.classList.remove('open'); }, 420); }
+});
 rail.addEventListener('mouseenter', () => { clearTimeout(closeT); rail.classList.add('open'); });
-rail.addEventListener('mouseleave', () => { clearTimeout(closeT); closeT = setTimeout(() => rail.classList.remove('open'), 420); });
+rail.addEventListener('mouseleave', () => {
+  clearTimeout(closeT);
+  closeT = setTimeout(() => { if (!overFly) rail.classList.remove('open'); }, 420);
+  if (flyOpenFor) closeFly(350);  // Zeit, um rüber ins Untermenü zu fahren
+});
 
 // ---- Durchsichtige Stellen lassen Klicks zum Desktop durch ----
 // Die App fragt selbst ab, wo der Mauszeiger ist - hier melden wir nur, wo Fenster, Leiste und Ränder liegen.
@@ -205,6 +369,7 @@ document.querySelectorAll('.rz').forEach(h => {
 function markActive(url) {
   let p = '/';
   try { p = new URL(url).pathname; } catch { /* egal */ }
+  curPath = p;
   let hit = false;
   document.querySelectorAll('.it[data-m]').forEach(b => { const on = !hit && new RegExp(b.dataset.m).test(p); b.classList.toggle('on', on); hit = hit || on; });
 }

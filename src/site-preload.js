@@ -30,7 +30,10 @@ contextBridge.exposeInMainWorld('hvikApp', {
   diag: () => ipcRenderer.invoke('app-diag'),
   testNotify: () => ipcRenderer.invoke('app-test-notify'),
   testToast: () => ipcRenderer.invoke('app-test-toast'),
+  overlayPreview: () => ipcRenderer.invoke('app-overlay-preview'),
   open: which => ipcRenderer.invoke('app-open', which),
+  move: what => ipcRenderer.invoke('app-move', what),
+  onMoveProgress: fn => { ipcRenderer.removeAllListeners('app-move-progress'); ipcRenderer.on('app-move-progress', (e, t) => fn(t)); },
   version: (process.argv.find(a => a.startsWith('--hvik-version=')) || '').split('=')[1] || '',
   platform: process.platform,
   mc: {

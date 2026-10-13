@@ -14,6 +14,7 @@ const ALLOWED = [/^https:\/\/(www\.)?hvik\.org([/?#]|$)/, /^https:\/\/(\w+\.)?di
 
 nativeTheme.themeSource = 'dark';
 app.setAppUserModelId('org.hvik.app');
+if (process.env.HVIK_PROFILE) app.setPath('userData', process.env.HVIK_PROFILE);  // nur für Tests: eigenes Profil neben der echten App
 if (!app.requestSingleInstanceLock()) app.exit(0);  // läuft schon -> sofort raus (die laufende App holt sich nach vorne)
 
 const stateFile = () => path.join(app.getPath('userData'), 'fenster.json');
@@ -28,6 +29,7 @@ let win, view, firstLoad = true;
 // Neues Design (Einstellungen → Design: Neu): Fenster ohne Rahmen und durchsichtig, links Platz für die Leiste,
 // die hinter dem Fenster hervorschaut. Gilt ab App-Start (Umschalten startet die App neu).
 let NEU = false;
+let fly = null, flyHideT = null, flyShown = false, flyAt = 0, flyH = 0;  // Untermenü-Fenster (neues Design)
 const RAIL_ZONE = 104, PAD = 14, NBAR = 36;  // passen zu shell-neu.html (--zone / --pad / --bar)
 const startUrl = () => (NEU ? SITE + '/app/start' : SITE);  // neues Design: eigene Startseite
 
@@ -48,11 +50,19 @@ function layout() {
   const pad = inner ? 0 : PAD;
   view.setBounds({ x: RAIL_ZONE, y: pad + NBAR, width: Math.max(0, w - RAIL_ZONE - pad), height: Math.max(0, h - pad - NBAR - pad) });
   view.setBorderRadius(inner ? 0 : 16);
+  flyClose(true);  // Fenster bewegt/Größe geändert: Untermenü zu (Position stimmt sonst nicht mehr)
   if (inner !== innerNow) { innerNow = inner; win.webContents.send('max', inner); }
 }
 // Andocken wie bei Windows: Fenster an den linken/rechten Rand ziehen = Hälfte, nach oben = maximiert
 // (bei rahmenlosen, durchsichtigen Fenstern macht Windows das nicht zuverlässig selbst)
 let dockFrom = null;
+let lastToggle = 0;
+function toggleMax() {
+  if (Date.now() - lastToggle < 400) return;  // Doppelklick nicht doppelt zählen
+  lastToggle = Date.now();
+  if (win.isMaximized()) win.unmaximize();
+  else win.maximize();  // auch angedockt: wie bei Windows erst groß, beim nächsten Mal zurück auf die angedockte Größe
+}
 function snapAfterMove(fake) {
   if (!NEU || win.isMaximized()) return;
   const { screen } = require('electron');
@@ -109,7 +119,96 @@ function createWindow() {
     }, 6000);  // kurz warten - direkt nach dem Ziehen setzt Windows die Größe sonst zurück
     win.webContents.on('did-finish-load', () => { layout(); applyDesign(); });
   }
-  win.once('ready-to-show', () => { if (!process.argv.includes('--versteckt')) win.show(); });  // Autostart: nur ins Symbol unten rechts
+  win.once('ready-to-show', () => { if (!process.argv.includes('--versteckt')) win.show(); });
+  if (process.env.HVIK_RAILTEST) {  // nur für Tests: Leiste mit Beispiel-Daten füllen, Live-Fenster öffnen, Bilder speichern
+    win.setOpacity(0);
+    win.once('ready-to-show', () => win.showInactive());
+    const out = n => process.env.HVIK_RAILTEST.replace('.png', n + '.png');
+    const av = 'https://cdn.discordapp.com/embed/avatars/1.png';
+    const mock = { ok: true, online_n: 4, dots: { games: true, events: true },
+      online: [{ id: '1', name: 'Kenzuto', avatar: av, activity: '🌙 Kingdom Hearts II', playing: true }, { id: '2', name: 'Leeni', avatar: null, activity: 'in der HviK-App', playing: false },
+               { id: '3', name: 'Galaxy', avatar: av, activity: 'auf hvik.org', playing: false }],
+      rounds: [{ id: 16, title: 'Neue runde Archipelago', url: '/events/archipelago/runde/16', slot: 'Bukaas',
+                 row: { game: 'Minecraft', icon: '⛏️', online: true, received: 17, checked: 48, total: 138 }, hints: [{ item: 'Netherite', k: 'item-prog', finder: 'Kenzuto', location: 'Hollow Bastion Chest' }] }],
+      liga: [{ id: 5, slug: 'valorant-solo', league: 'Solo Liga', best_of: 3, at: '20:30', started: true, me: 'a', a: { name: 'Bukaas', avatar: av }, b: { name: 'Samtaman', avatar: av },
+               done: [[13, 9]], pending: null, state: 'enter', map_no: 2, map: 'Ascent', url: '/liga/valorant-solo', until: 'heute 22:10' },
+             { id: 6, slug: 'valorant-solo', league: 'Solo Liga', best_of: 3, at: '18:00', started: false, me: 'b', a: { name: 'Jannüü', avatar: av }, b: { name: 'Bukaas', avatar: av },
+               done: [], pending: null, state: 'start', map_no: 1, map: null, url: '/liga/valorant-solo', until: 'morgen 18:02' }],
+      match: [], mc: [{ code: 'ABC', name: 'Testlobby', n: 3, mine: false }],
+      next: { title: 'League tunier', icon: '🏆', at: Date.now() / 1000 + 3 * 3600, url: '/tournaments/12', time: '20:00' } };
+    setTimeout(async () => {
+      win.webContents.send('rail', mock);
+      await win.webContents.executeJavaScript("rail.classList.add('open')");
+      await new Promise(r => setTimeout(r, 800));
+      require('fs').writeFileSync(out(0), (await win.capturePage()).toPNG());
+      for (const [i, sel] of [[1, '#live .lv:nth-child(1)'], [2, '#live .lv:nth-child(2)']]) {
+        await win.webContents.executeJavaScript(`flyOpenFor = null; document.querySelector('${sel}').dispatchEvent(new MouseEvent('mouseenter'))`);
+        await new Promise(r => setTimeout(r, 900));
+        require('fs').writeFileSync(out(i), (await fly.webContents.capturePage()).toPNG());
+        console.log('railtest', i, JSON.stringify(fly.getBounds()));
+      }
+      app.exit(0);
+    }, 5000);
+  }
+  if (process.env.HVIK_OVTEST) {  // nur für Tests: Overlay-Vorschau als Bild speichern
+    setTimeout(async () => {
+      background.overlay.showPreview();
+      await new Promise(r => setTimeout(r, 1500));
+      const w = background.overlay._win();
+      require('fs').writeFileSync(process.env.HVIK_OVTEST, (await w.webContents.capturePage()).toPNG());
+      console.log('ovtest', JSON.stringify(w.getBounds()), w.isVisible());
+      app.exit(0);
+    }, 5000);
+  }
+  if (process.env.HVIK_DRAGTEST) {  // nur für Tests: Ziehen mit vorgetäuschtem Mauszeiger, Doppelklick in der Leiste
+    process.env.HVIK_FAKECURSOR = '1';
+    win.setOpacity(0);
+    win.once('ready-to-show', () => win.showInactive());
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    const at = (x, y) => { process.env.HVIK_FAKECURSOR_NOW = JSON.stringify({ x, y }); };
+    const say = t => console.log('dragtest', t, win.isMaximized(), JSON.stringify(win.getBounds()), 'innen', innerNow);
+    const ev = { sender: win.webContents };
+    setTimeout(async () => {
+      win.setBounds({ x: 900, y: 300, width: 1424, height: 840 }); await wait(500); say('start');
+      at(1500, 320); ipcMain.emit('win-drag', ev, 'start'); at(1200, 400); await wait(200); at(1, 600); await wait(200);
+      ipcMain.emit('win-drag', ev, 'end'); await wait(1500); say('links angedockt');
+      at(600, 20); ipcMain.emit('win-drag', ev, 'start'); at(650, 60); await wait(150); at(1500, 500); await wait(200);
+      ipcMain.emit('win-drag', ev, 'end'); await wait(800); say('weggezogen (alte Größe?)');
+      await win.webContents.executeJavaScript("document.getElementById('strip').dispatchEvent(new MouseEvent('dblclick', {bubbles: true}))"); await wait(800); say('doppelklick 1');
+      await win.webContents.executeJavaScript("document.getElementById('strip').dispatchEvent(new MouseEvent('dblclick', {bubbles: true}))"); await wait(800); say('doppelklick 2');
+      await win.webContents.executeJavaScript("document.getElementById('strip').dispatchEvent(new MouseEvent('dblclick', {bubbles: true}))"); await wait(800); say('doppelklick 3 (groß)');
+      at(1700, 15); ipcMain.emit('win-drag', ev, 'start'); at(1720, 60); await wait(150); at(1800, 400); await wait(200);
+      ipcMain.emit('win-drag', ev, 'end'); await wait(800); say('aus maximiert weggezogen');
+      app.exit(0);
+    }, 5000);
+  }
+  if (process.env.HVIK_DBLTEST) {  // nur für Tests: zweimal Doppelklick auf die Titelleiste schicken, Zustand ausgeben
+    win.setOpacity(0);
+    win.once('ready-to-show', () => win.showInactive());
+    const hwnd = win.getNativeWindowHandle().readBigUInt64LE(0).toString();
+    const ps = `Add-Type -Namespace W -Name M -MemberDefinition '[DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l);'; [void][W.M]::SendMessage([IntPtr]${hwnd}, 0xA3, [IntPtr]2, [IntPtr]0)`;
+    const dbl = () => new Promise(r => require('child_process').execFile('powershell.exe', ['-NoProfile', '-Command', ps], () => setTimeout(r, 1200)));
+    setTimeout(async () => {
+      console.log('dbltest vorher', win.isMaximized(), JSON.stringify(win.getBounds()));
+      await dbl(); console.log('dbltest 1x', win.isMaximized(), JSON.stringify(win.getBounds()));
+      await dbl(); console.log('dbltest 2x', win.isMaximized(), JSON.stringify(win.getBounds()));
+      app.exit(0);
+    }, 5000);
+  }
+  if (process.env.HVIK_FLYTEST) {  // nur für Tests: unsichtbar starten, Untermenü öffnen, Bild vom Fenster speichern
+    win.setOpacity(0);
+    win.once('ready-to-show', () => win.showInactive());
+    setTimeout(async () => {
+      for (const [i, key] of [[1, 'games'], [2, 'events']]) {
+        await win.webContents.executeJavaScript(`rail.classList.add('open'); flyOpenFor = null; openFly(document.querySelector('[data-fly=${key}]'))`);
+        await new Promise(r => setTimeout(r, 900));
+        require('fs').writeFileSync(process.env.HVIK_FLYTEST.replace('.png', i + '.png'), (await win.capturePage()).toPNG());
+        console.log('flytest', key, flyShown, JSON.stringify(fly.getBounds()));
+        require('fs').writeFileSync(process.env.HVIK_FLYTEST.replace('.png', i + 'f.png'), (await fly.webContents.capturePage()).toPNG());
+      }
+      app.exit(0);
+    }, 5000);
+  }  // Autostart: nur ins Symbol unten rechts
 
   view = new WebContentsView({
     webPreferences: { preload: path.join(__dirname, 'site-preload.js'), partition: 'persist:hvik',
@@ -118,6 +217,15 @@ function createWindow() {
   view.setBackgroundColor('#0d0f13');
   win.contentView.addChildView(view);
   view.setVisible(false);  // erst zeigen, wenn die Seite geladen ist (bis dahin Ladebildschirm)
+  if (NEU) {  // Untermenü-Fenster neben der Leiste (Games, Events & Termine) - liegt über der Seite
+    fly = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'shell-preload.js') } });
+    fly.setBackgroundColor('#00000000');
+    fly.setBorderRadius(20);
+    fly.setVisible(false);
+    win.contentView.addChildView(fly);
+    fly.webContents.loadFile(path.join(__dirname, 'flyout.html'));
+    fly.webContents.on('did-finish-load', applyDesign);
+  }
   layout();
   win.on('resize', layout);
   win.on('close', () => saveBounds(win));
@@ -137,6 +245,7 @@ function createWindow() {
   wc.on('did-navigate', () => { if (finding) stopFind(); });
   wc.on('did-finish-load', () => {
     setTimeout(sendBadges, 1500);
+    setTimeout(railRefresh, 1200);
     if (firstLoad) { firstLoad = false; view.setVisible(true); win.webContents.send('ready'); }
   });
   wc.on('did-fail-load', (e, code, desc, url, isMain) => {
@@ -147,6 +256,28 @@ function createWindow() {
     win.webContents.send('guide', background.getGuide());
     setTimeout(() => { if (firstLoad) { win.webContents.send('loading'); view.webContents.loadURL(startUrl()); } }, 15000);  // von selbst nochmal versuchen
   });
+  // Seite in der Mitte abgestürzt (z. B. Grafikkarte bei den 3D-Spielen überfordert) oder hängt: von selbst neu laden,
+  // statt leer zu bleiben (vorher half nur, die ganze App neu zu starten). War es eine 3D-Seite: zurück zur Spiele-Übersicht.
+  let lastCrash = 0, hangT = null, lastTry = Date.now();
+  const recover = why => {
+    background.note('fehler', 'Seite neu geladen: ' + why);
+    const again = Date.now() - lastCrash < 30000; lastCrash = Date.now();
+    let url = '';
+    try { url = wc.getURL(); } catch { /* egal */ }
+    if (again || !url || !ALLOWED.some(r => r.test(url))) url = startUrl();
+    else if (/\/spiele\/(welt|tisch|memory\/|farbsturm\/|imposter\/)/.test(url)) url = SITE + '/spiele';
+    firstLoad = true; view.setVisible(false); win.webContents.send('loading');
+    setTimeout(() => { lastTry = Date.now(); wc.loadURL(url); }, 500);
+  };
+  wc.on('render-process-gone', (e, d) => { if (d.reason !== 'clean-exit') recover(d.reason); });
+  wc.on('unresponsive', () => { clearTimeout(hangT); hangT = setTimeout(() => { try { wc.forcefullyCrashRenderer(); } catch { /* egal */ } recover('hängt'); }, 8000); });
+  wc.on('responsive', () => clearTimeout(hangT));
+  app.on('child-process-gone', (e, d) => { if (d.type === 'GPU' && d.reason !== 'clean-exit' && /\/spiele\//.test(wc.getURL())) recover('Grafik'); });
+  // Server kurz weg (502/503/504 beim Neustart): nach ein paar Sekunden selbst neu laden
+  wc.on('did-navigate', (e, url, code) => { if (code >= 502 && code <= 504) setTimeout(() => { if (!wc.isLoading()) wc.reload(); }, 4000); });
+  wc.on('did-start-loading', () => { lastTry = Date.now(); });
+  // Wächter: bleibt die Mitte leer (z. B. weil ein Neuversuch abgebrochen wurde), alle 10 s wieder probieren
+  setInterval(() => { if (firstLoad && !wc.isLoading() && Date.now() - lastTry > 12000) { lastTry = Date.now(); win.webContents.send('loading'); wc.loadURL(startUrl()); } }, 10000);
   wc.loadURL(startUrl());
   shortcuts(wc);
   shortcuts(win.webContents);
@@ -193,13 +324,45 @@ const SITE_MENUS = {
   online: "(document.getElementById('onl') || {classList: {toggle() {}}}).classList.toggle('open')",
   user: "typeof toggleUserMenu === 'function' && toggleUserMenu(new MouseEvent('click'))",
 };
+// Untermenü neben der Leiste: shell-neu.html sagt, welche Gruppe und auf welcher Höhe; das Fenster liegt über der Seite
+function flyOpen(g) {
+  if (!fly) return;
+  clearTimeout(flyHideT);
+  flyAt = g.y || 0;
+  flyPlace(flyH || 240);
+  fly.setVisible(true); flyShown = true;
+  fly.webContents.send('fly-show', g);
+}
+function flyPlace(h) {
+  const [w, wh] = win.getContentSize();
+  const top = (innerNow ? 0 : PAD) + NBAR + 6;
+  const y = Math.round(Math.max(top, Math.min(wh - h - 12, flyAt - 34)));
+  fly.setBounds({ x: RAIL_ZONE + 4, y, width: Math.min(300, w - RAIL_ZONE - 10), height: Math.round(h) });
+}
+function flyClose(now) {
+  if (!fly || !flyShown) return;
+  flyShown = false;
+  fly.webContents.send('fly-hide');
+  clearTimeout(flyHideT);
+  flyHideT = setTimeout(() => fly.setVisible(false), now ? 0 : 170);
+}
 ipcMain.on('nav-cmd', (e, cmd) => {
   const wc = view.webContents;
   cmd = String(cmd || '');
+  if (cmd.startsWith('fly:')) {
+    const sub = cmd.slice(4);
+    if (sub.startsWith('open:')) { try { flyOpen(JSON.parse(sub.slice(5))); } catch { /* egal */ } }
+    else if (sub === 'close') flyClose();
+    else if (sub.startsWith('size:')) { const h = Math.max(60, Math.min(700, Number(sub.slice(5)) || 0)); flyH = h; if (flyShown) flyPlace(h); }
+    else if (sub === 'in' || sub === 'out') win.webContents.send('fly-hover', sub === 'in');
+    else if (sub.startsWith('nav:')) win.webContents.send('fly-nav', Number(sub.slice(4)) < 0 ? -1 : 1);
+    return;
+  }
   if (cmd === 'win-min') return win.minimize();
-  if (cmd === 'win-max') return win.isMaximized() ? win.unmaximize() : win.maximize();
+  if (cmd === 'win-max') return toggleMax();
   if (cmd === 'win-close') return win.close();
-  if (cmd.startsWith('go:')) { const p = cmd.slice(3); if (/^\/[\w\-/#?=&.]*$/.test(p)) wc.loadURL(SITE + p); return; }
+  if (cmd.startsWith('go:')) { flyClose(true); win.webContents.send('fly-hover', false); const p = cmd.slice(3); if (/^\/[\w\-/#?=&.]*$/.test(p)) wc.loadURL(SITE + p); return; }
+  if (cmd.startsWith('profile:')) { const id = cmd.slice(8); if (/^\d+$/.test(id)) wc.executeJavaScript(`typeof hvikProfile === 'function' && hvikProfile('${id}')`, true).catch(() => {}); return; }
   if (cmd.startsWith('site:')) { const js = SITE_MENUS[cmd.slice(5)]; if (js) { wc.focus(); wc.executeJavaScript(js, true).catch(() => {}); } return; }
   if (cmd === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
   else if (cmd === 'forward' && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
@@ -233,10 +396,18 @@ function setupUpdates() {
   });
   autoUpdater.on('error', e => { checking = false; console.warn('Update:', e && e.message); });
   autoUpdater.on('update-not-available', () => { checking = false; });
-  const check = () => {
+  // Updates kommen über hvik.org: alle bekommen die freigegebene Version (Admin → App-Update),
+  // Tester sofort die neueste Vorabversion. Wer Tester ist, sagt der Server (nach dem Einloggen).
+  const feed = async () => {
+    let tester = false;
+    try { tester = !!(await (await session.fromPartition('persist:hvik').fetch(`${SITE}/api/app/kanal`, { cache: 'no-store' })).json()).tester; } catch { /* offline */ }
+    autoUpdater.setFeedURL({ provider: 'generic', url: `${SITE}/api/app/feed/${tester ? 'beta/' : ''}` });
+  };
+  const check = async () => {
     if (ready) return askUpdate();
     if (checking) return;
     checking = true;
+    await feed();
     autoUpdater.checkForUpdates().catch(() => { checking = false; });
   };
   check();
@@ -408,7 +579,8 @@ ipcMain.handle('ap-client', async (e, name) => {
 });
 ipcMain.handle('ap-open-folder', async (e, folder) => {
   if (!fromSite(e)) return null;
-  const target = folder && path.resolve(folder).startsWith(archipelago.ROOT) ? folder : archipelago.ROOT;
+  const rel = folder ? path.relative(archipelago.ROOT, path.resolve(folder)) : '..';
+  const target = rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? path.resolve(folder) : archipelago.ROOT;  // nur Ordner darin
   fs.mkdirSync(target, { recursive: true });
   return shell.openPath(target);
 });
@@ -443,7 +615,8 @@ ipcMain.handle('app-settings', async (e, patch) => {
   if (!fromSite(e)) return null;
   if (patch && typeof patch === 'object') {
     const allowed = {};
-    for (const k of ['autostart', 'tray', 'discord', 'spielzeit']) if (k in patch) allowed[k] = !!patch[k];
+    for (const k of ['autostart', 'tray', 'discord', 'spielzeit', 'overlay']) if (k in patch) allowed[k] = !!patch[k];
+    if (['oben-rechts', 'oben-links', 'mitte-rechts', 'unten-links', 'unten-rechts'].includes(patch.overlayPos)) allowed.overlayPos = patch.overlayPos;
     if (['auto', 'immer', 'aus'].includes(patch.toastMode)) allowed.toastMode = patch.toastMode;
     if (['alt', 'neu'].includes(patch.design)) allowed.design = patch.design;
     if (PALETTES.includes(patch.palette)) allowed.palette = patch.palette;
@@ -453,12 +626,88 @@ ipcMain.handle('app-settings', async (e, patch) => {
     background.applyAutostart();
     background.refreshPresence();
     applyDesign();
+    if ('overlay' in allowed || allowed.overlayPos || allowed.palette) background.overlay.refresh();
     // Alt <-> Neu braucht ein anderes Fenster (mit/ohne Rahmen) -> App kurz neu starten
     if (allowed.design && (allowed.design === 'neu') !== NEU) setTimeout(() => { app.relaunch(); app.exit(0); }, 600);
   }
-  return { ...background.settings(), cfRoot: loadSettings().cfRoot || null, apRoot: archipelago.ROOT, designActive: NEU ? 'neu' : 'alt' };
+  return { ...background.settings(), cfRoot: loadSettings().cfRoot || null, apRoot: archipelago.ROOT, designActive: NEU ? 'neu' : 'alt',
+           appDir: path.dirname(process.execPath), canMoveApp: app.isPackaged };
 });
 ipcMain.handle('app-diag', async e => (fromSite(e) ? background.diag() : null));
+
+// ---------- Speicherort: App oder Spiele-Ordner auf eine andere Platte verschieben ----------
+async function dirSize(dir) {  // Bytes (für Fortschritt + Platz-Prüfung)
+  let n = 0;
+  for (const d of await fs.promises.readdir(dir, { withFileTypes: true }).catch(() => [])) {
+    const p = path.join(dir, d.name);
+    if (d.isDirectory()) n += await dirSize(p); else n += (await fs.promises.stat(p).catch(() => ({ size: 0 }))).size;
+  }
+  return n;
+}
+async function copyDir(src, dst, onBytes) {
+  await fs.promises.mkdir(dst, { recursive: true });
+  for (const d of await fs.promises.readdir(src, { withFileTypes: true })) {
+    const a = path.join(src, d.name), b = path.join(dst, d.name);
+    if (d.isDirectory()) await copyDir(a, b, onBytes);
+    else { await fs.promises.copyFile(a, b); onBytes((await fs.promises.stat(a)).size); }
+  }
+}
+ipcMain.handle('app-move', async (e, what) => {
+  if (!fromSite(e)) return null;
+  const say = t => { try { e.sender.send('app-move-progress', t); } catch { /* Seite weg */ } };
+  const r = await dialog.showOpenDialog(win, { title: what === 'app' ? 'Wohin soll die HviK-App?' : 'Wohin sollen die Spiele-Dateien?', properties: ['openDirectory', 'createDirectory'] });
+  if (r.canceled || !r.filePaths[0]) return { ok: false, cancelled: true };
+  const pick = r.filePaths[0];
+  if (what === 'daten') {
+    const from = archipelago.ROOT, to = path.join(pick, 'HviK Archipelago');
+    if (path.resolve(to).toLowerCase() === path.resolve(from).toLowerCase()) return { ok: false, message: 'Das ist schon der aktuelle Ordner.' };
+    if (path.resolve(to).toLowerCase().startsWith(path.resolve(from).toLowerCase() + path.sep)) return { ok: false, message: 'Der neue Ordner darf nicht im alten liegen.' };
+    if (background.getRunning()) return { ok: false, message: 'Bitte erst das laufende Spiel beenden.' };
+    try {
+      if (fs.existsSync(from)) {
+        say('Prüfe, wie viel es ist …');
+        const total = await dirSize(from);
+        try { await fs.promises.rename(from, to); }  // gleiche Platte: sofort fertig
+        catch {
+          let done = 0, last = 0;
+          await copyDir(from, to, n => { done += n; if (Date.now() - last > 300) { last = Date.now(); say(`Kopiere … ${Math.round(100 * done / Math.max(1, total))} % (${(done / 1e9).toFixed(1)} von ${(total / 1e9).toFixed(1)} GB)`); } });
+          say('Räume den alten Ordner auf …');
+          await fs.promises.rm(from, { recursive: true, force: true });
+        }
+      }
+      saveSettings({ ...loadSettings(), dataRoot: pick });
+      say('✅ Fertig – die App startet kurz neu.');
+      setTimeout(() => { app.relaunch(); app.exit(0); }, 1200);
+      return { ok: true, folder: to };
+    } catch (err) {
+      return { ok: false, message: 'Verschieben ging nicht: ' + err.message + ' – die Dateien sind noch am alten Ort.' };
+    }
+  }
+  if (what === 'app') {
+    if (!app.isPackaged) return { ok: false, message: 'Geht nur in der installierten App.' };
+    const target = /hvik$/i.test(pick) ? pick : path.join(pick, 'HviK');
+    if (path.resolve(target).toLowerCase() === path.dirname(process.execPath).toLowerCase()) return { ok: false, message: 'Die App ist schon dort.' };
+    try {
+      // gleiche Version neu installieren - in den neuen Ordner; der Installer räumt die alte Installation selbst weg
+      const v = app.getVersion();
+      say('Lade den Installer …');
+      const res = await session.fromPartition('persist:hvik').fetch(`https://github.com/Bukaas/HviK-App/releases/download/v${v}/HviK-Setup-${v}.exe`);
+      if (!res.ok) throw new Error(`Download fehlgeschlagen (${res.status})`);
+      const exe = path.join(app.getPath('temp'), `HviK-Setup-${v}.exe`);
+      await fs.promises.writeFile(exe, Buffer.from(await res.arrayBuffer()));
+      say('✅ Die App zieht um – sie schließt sich und startet gleich am neuen Ort neu.');
+      const { spawn } = require('child_process');
+      // /D muss als letztes und ohne Anführungszeichen kommen (NSIS) -> Befehlszeile selbst bauen
+      spawn('cmd.exe', ['/c', 'start', '""', `"${exe}"`, '/S', '--force-run', `/D=${target}`],
+            { detached: true, stdio: 'ignore', windowsVerbatimArguments: true, windowsHide: true }).unref();
+      setTimeout(() => app.exit(0), 1500);  // App zu, damit der Installer die alten Dateien ersetzen kann
+      return { ok: true, folder: target };
+    } catch (err) {
+      return { ok: false, message: 'Umziehen ging nicht: ' + err.message };
+    }
+  }
+  return { ok: false };
+});
 // Design: Fensterleiste und Seite fragen beim Laden nach und bekommen Änderungen sofort.
 // Maßgeblich ist das Fenster, das gerade läuft (NEU) - die gespeicherte Einstellung gilt erst nach dem Neustart.
 const PALETTES = ['aurora', 'ozean', 'glut', 'gift', 'sakura', 'rot'];
@@ -467,7 +716,8 @@ ipcMain.handle('app-design', () => (NEU ? 'neu' : 'alt'));
 ipcMain.handle('app-palette', () => palette());
 function applyDesign() {
   const d = NEU ? 'neu' : 'alt', p = palette();
-  for (const wc of [win && !win.isDestroyed() && win.webContents, view && !view.webContents.isDestroyed() && view.webContents]) {
+  for (const wc of [win && !win.isDestroyed() && win.webContents, view && !view.webContents.isDestroyed() && view.webContents,
+                    fly && !fly.webContents.isDestroyed() && fly.webContents]) {
     if (!wc) continue;
     wc.send('design', d);
     wc.send('palette', p);
@@ -486,7 +736,7 @@ function setIgnoring(v) {
 }
 setInterval(() => {
   if (!NEU || !win || win.isDestroyed() || !win.isVisible()) return;
-  if (innerNow || resizing) return setIgnoring(false);
+  if (innerNow || resizing || drag) return setIgnoring(false);
   // in echten Bildschirmpixeln rechnen: bei Bildschirmen mit unterschiedlicher Skalierung (z. B. hochkant mit 125 %)
   // passen die "logischen" Koordinaten von Mauszeiger und Fenster sonst nicht zusammen -> Klicks gingen durchs Fenster
   const { screen } = require('electron');
@@ -519,6 +769,70 @@ ipcMain.on('win-resize', (e, msg) => {
   if (edge.includes('n')) { nb.height = Math.max(mh, Math.round(b.height - dy)); nb.y = b.y + b.height - nb.height; }
   win.setBounds(nb);
 });
+// Fenster ziehen (obere Leiste): Start/Ende kommen von shell-neu.html, dazwischen folgt das Fenster dem Mauszeiger.
+// Maximiert oder angedockt -> beim ersten Ziehen alte Größe zurück, Mauszeiger bleibt an derselben Stelle der Leiste.
+let drag = null, dragT = null;
+const cursorNow = () => (process.env.HVIK_FAKECURSOR ? JSON.parse(process.env.HVIK_FAKECURSOR_NOW || '{"x":0,"y":0}') : require('electron').screen.getCursorScreenPoint());
+function dragTick() {
+  if (!drag || !win || win.isDestroyed()) return;
+  const c = cursorNow();
+  if (!drag.moved) {
+    if (Math.abs(c.x - drag.c.x) + Math.abs(c.y - drag.c.y) < 5) return;  // nur ein Klick, kein Ziehen
+    drag.moved = true;
+    if (drag.max || drag.docked) {
+      const ratio = drag.off.x / Math.max(1, drag.b.width);
+      let size;
+      if (drag.max) { win.unmaximize(); const nb = win.getBounds(); size = { width: nb.width, height: nb.height }; }
+      else size = { width: dockFrom.width, height: dockFrom.height };
+      dockFrom = null;
+      drag.off = { x: Math.round(ratio * size.width), y: Math.min(drag.off.y, (innerNow ? 0 : PAD) + NBAR - 6) };
+      win.setBounds({ x: Math.round(c.x - drag.off.x), y: Math.round(c.y - drag.off.y), ...size });
+      return;
+    }
+  }
+  win.setPosition(Math.round(c.x - drag.off.x), Math.round(c.y - drag.off.y));
+}
+ipcMain.on('win-drag', (e, phase) => {
+  if (!NEU || !win || e.sender !== win.webContents) return;
+  clearInterval(dragT);
+  if (phase === 'start') {
+    const c = cursorNow(), b = win.getBounds();
+    drag = { c, b, off: { x: c.x - b.x, y: c.y - b.y }, moved: false, max: win.isMaximized(), docked: !win.isMaximized() && !!dockFrom && isInner() };
+    dragT = setInterval(dragTick, 8);
+    return;
+  }
+  const moved = drag && drag.moved;
+  drag = null;
+  if (moved) setTimeout(() => snapAfterMove(process.env.HVIK_FAKECURSOR ? cursorNow() : undefined), 30);  // an den Rand gezogen -> andocken
+});
+
+// Live-Teil der Leiste (neues Design): wer online ist, meine Runde, mein Liga-Spiel, mein Match, Lobbys, nächster Termin
+let railBusy = false;
+async function railRefresh() {
+  if (!NEU || railBusy || !win || win.isDestroyed()) return;
+  railBusy = true;
+  try { const d = await siteGet('/api/app/leiste', true); if (d && d.ok) win.webContents.send('rail', d); } catch { /* offline / nicht eingeloggt */ }
+  finally { railBusy = false; }
+}
+setInterval(railRefresh, 15000);
+async function sitePostAny(url, body) {  // wie sitePost, aber auch Fehlerantworten (mit Meldung) zurückgeben
+  try {
+    const r = await session.fromPartition('persist:hvik').fetch(SITE + url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}), cache: 'no-store' });
+    return await r.json().catch(() => ({ ok: r.ok }));
+  } catch { return { ok: false, message: 'hvik.org ist gerade nicht erreichbar.' }; }
+}
+const fromShell = e => e.sender === (win && win.webContents) || e.sender === (fly && fly.webContents);
+ipcMain.handle('rail-liga', async (e, id, action, body) => {
+  if (!fromShell(e) || !/^\d+$/.test(String(id)) || !['starten', 'map_melden', 'map_bestaetigen', 'map_ablehnen'].includes(action)) return { ok: false };
+  const r = await sitePostAny(`/liga/spiel/${id}/${action}`, action === 'map_melden' ? { score: (body.score || []).slice(0, 2).map(Number) } : {});
+  setTimeout(railRefresh, 400);
+  return r;
+});
+ipcMain.handle('rail-voice', async (e, id, side) => {
+  if (!fromShell(e) || !/^\d+$/.test(String(id))) return { ok: false };
+  return sitePostAny(`/tournaments/api/matches/${id}/channel`, { side: String(side || '') });
+});
+
 // Glocken-Zahl, Online-Zahl und Profilbild aus der Seite für die Leiste
 async function sendBadges() {
   if (!NEU || !view || view.webContents.isDestroyed() || !win || win.isDestroyed()) return;
@@ -532,6 +846,7 @@ async function sendBadges() {
 }
 setInterval(sendBadges, 15000);
 ipcMain.handle('app-test-toast', async e => { if (fromSite(e)) background.testToast(); });
+ipcMain.handle('app-overlay-preview', async e => { if (fromSite(e)) background.overlay.showPreview(); });
 ipcMain.handle('app-test-notify', async e => {
   if (fromSite(e)) background.notify('🔔 So sehen Benachrichtigungen aus', 'Ein Klick drauf bringt dich zur passenden Seite.', '/app/einstellungen');
 });
@@ -552,7 +867,12 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);  // kein verstecktes Standard-Menü (Strg+R, Entwicklertools ...) - die Kürzel kommen aus shortcuts()
   createWindow();
   setupUpdates();
-  background.start({ win, view, site: SITE, loadSettings, saveSettings, fetchJson: u => siteGet(u, true), postJson: sitePost, onNet });
+  // Overlay im Spiel an/aus - funktioniert auch, während ein Spiel vorne ist
+  try { require('electron').globalShortcut.register('CommandOrControl+Alt+O', () => {
+    const on = background.overlay.toggle();
+    background.notify(on ? '🎮 Overlay an' : '🎮 Overlay aus', on ? 'Erscheint, sobald eine Archipelago-Runde mit dir läuft.' : 'Wieder an: Strg+Alt+O');
+  }); } catch { /* Kürzel schon belegt */ }
+  background.start({ win, view, site: SITE, loadSettings, saveSettings, fetchJson: u => siteGet(u, true), postJson: sitePost, onNet, onChange: railRefresh });
   view.webContents.on('did-finish-load', showWhatsNew);
   win.webContents.on('did-finish-load', () => { win.webContents.send('game', background.getRunning()); applyDesign(); });
 });

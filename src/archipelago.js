@@ -8,7 +8,14 @@ const { execFile, spawn } = require('child_process');
 const AdmZip = require('adm-zip');
 const mcap = require('./mcap');
 
-const ROOT = path.join(os.homedir(), 'HviK Archipelago');   // der "Archi-Spiele-Ordner"
+// der "Archi-Spiele-Ordner": Standard im Benutzerordner, in den Einstellungen verschiebbar (dataRoot) - gilt ab App-Start
+const ROOT = (() => {
+  try {
+    const s = JSON.parse(fs.readFileSync(path.join(require('electron').app.getPath('userData'), 'einstellungen.json'), 'utf8'));
+    if (s.dataRoot) return path.join(s.dataRoot, 'HviK Archipelago');
+  } catch { /* keine Einstellung */ }
+  return path.join(os.homedir(), 'HviK Archipelago');
+})();
 const ROMS = path.join(ROOT, 'ROMs');
 let AP_DIR = 'C:\\ProgramData\\Archipelago';   // Standard - wo es wirklich liegt, sagt apInfo()
 const AP_SETUP = 'https://github.com/ArchipelagoMW/Archipelago/releases/download/0.6.7/Setup.Archipelago.0.6.7.exe';

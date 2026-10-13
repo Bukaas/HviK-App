@@ -1,8 +1,9 @@
 // Hintergrund: Symbol im Infobereich, Autostart, Windows-Benachrichtigungen, "Spiel läuft", Protokoll für "Fehler melden".
-const { app, Tray, Menu, Notification, nativeImage } = require('electron');
+const { app, Tray, Menu, Notification, nativeImage, shell } = require('electron');
 const { execFile } = require('child_process');
 const toast = require('./toast');
 const presence = require('./presence');
+const overlay = require('./overlay');
 const path = require('path');
 const os = require('os');
 
@@ -16,6 +17,8 @@ const DEFAULTS = {
   palette: 'ozean',    // Farbwelt des neuen Designs: aurora, ozean, glut, gift, sakura, rot
   discord: true,       // Discord-Status, solange ein Spiel läuft
   spielzeit: true,     // Spielzeit mitzählen
+  overlay: false,      // Overlay im Spiel (Archipelago-Fortschritt) - an/aus auch mit Strg+Alt+O
+  overlayPos: 'oben-rechts',
 };
 
 let ctx = null;            // { win, view, site, loadSettings, saveSettings, fetchJson }
@@ -107,6 +110,7 @@ function updateMenu() {
   items.push({ label: '⛏️ Minecraft (HviK Link)', click: () => show('/games/minecraft') }, { label: '🧩 Archipelago', click: () => show('/events/archipelago') });
   if (quick.next) items.push({ label: `🗓️ ${quick.next.time} ${quick.next.title}`, click: () => show(quick.next.url) });
   items.push({ label: '🗓️ Alle Termine', click: () => show('/termine') }, { type: 'separator' },
+             { label: `🎮 Overlay im Spiel: ${settings().overlay ? 'an' : 'aus'} (Strg+Alt+O)`, click: () => { overlay.toggle(); updateMenu(); } },
              { label: '📜 Patchnotes', click: () => show('/app#patchnotes') }, { label: '⚙️ Einstellungen', click: () => show('/app/einstellungen') },
              { type: 'separator' }, { label: 'Beenden', click: () => { quitting = true; app.quit(); } });
   tray.setContextMenu(Menu.buildFromTemplate(items));
@@ -120,6 +124,12 @@ function applyAutostart() {
 // ---------- Benachrichtigungen: alle 30 s bei hvik.org nachsehen ----------
 const seen = { mc: null, ap: null, apStatus: {}, bell: null, liga: null, confirms: null, chat: {}, chatPrimed: {}, hints: new Set(), online: null };
 const lastOnline = {};  // user_id -> zuletzt online gesehen (ms) - "ist online" nur nach mind. 10 Min. Pause
+let polling = false;  // nie zwei Abfragen gleichzeitig (sonst doppelte Meldungen)
+async function safePoll() {
+  if (polling) return;
+  polling = true;
+  try { await poll(); } catch (e) { note('fehler', 'Benachrichtigungen: ' + e.message); } finally { polling = false; }
+}
 async function poll() {
   const s = settings();
   pollNo++;
@@ -228,11 +238,20 @@ async function poll() {
     const keys = new Set(mm.items.map(m => m.key));
     if (seen.match) for (const m of mm.items) if (!seen.match.has(m.key)) {
       note('turnier', `Match ${m.number}: ${m.me} vs ${m.opponent}`);
-      toast.show({ kind: 'match', icon: '⚔️', title: `Dein Match ist bereit · ${m.tournament}`, name: `${m.me} vs ${m.opponent}`,
+      toast.show({ kind: 'match', urgent: true, icon: '⚔️', title: `Dein Match ist bereit · ${m.tournament}`, name: `${m.me} vs ${m.opponent}`,
                    text: `Spiel ${m.number} – viel Erfolg!`, colorHex: '#f4c150', seconds: 25,
                    buttons: [{ label: '⚔️ Zum Match', action: `open:${m.url}` }, { label: '🔊 In meinen Voice-Kanal', action: `voice:${m.id}:${m.side}` }] });
     }
     seen.match = keys;
+    // Gegner hat ein Ergebnis gemeldet -> ich muss es bestätigen
+    const ck = new Set(mm.items.filter(m => m.confirm).map(m => m.confirm_key));
+    if (seen.matchConfirm) for (const m of mm.items) if (m.confirm && !seen.matchConfirm.has(m.confirm_key)) {
+      note('turnier', `Ergebnis bestätigen: Spiel ${m.number}`);
+      toast.show({ kind: 'match', urgent: true, icon: '✅', title: `Ergebnis bestätigen · ${m.tournament}`, name: `${m.me} vs ${m.opponent}`,
+                   text: `${m.reported} – stimmt das?`, colorHex: '#f4c150', seconds: 25,
+                   buttons: [{ label: '✅ Zum Bestätigen', action: `open:${m.url}` }] });
+    }
+    seen.matchConfirm = ck;
   }
   // Termine: 15 Minuten vorher erinnern (erinnerte merken sich die Einstellungen - kein Doppel nach Neustart)
   const tm = f.termine;
@@ -360,8 +379,14 @@ function setGuide(g) { lastGuide = g || null; if (ctx.win) ctx.win.webContents.s
 
 function start(c) {
   ctx = c;
+  overlay.start({ settings, loadSettings: c.loadSettings, saveSettings: c.saveSettings, fetchJson: c.fetchJson, apMine: () => quick.apMine });
   toast.setMode(() => settings().toastMode);
   toast.setLook(() => (settings().design === 'neu' ? { palette: settings().palette || 'ozean' } : null));
+  toast.setOnHeld(t => {
+    note('vollbild', `wartet: ${t.title}`);
+    try { shell.beep(); } catch { /* egal */ }
+    if (ctx.win && !ctx.win.isDestroyed()) ctx.win.flashFrame(true);  // Taskleiste blinkt, bis man die App anklickt
+  });
   toast.setHandler(async action => {
     if (action.startsWith('open:')) return show(action.slice(5));
     if (action.startsWith('voice:')) {
@@ -376,8 +401,19 @@ function start(c) {
   setInterval(() => trackTick().catch(() => {}), 60 * 1000);
   setupTray();
   applyAutostart();
-  setTimeout(poll, 8000);
-  setInterval(() => poll().catch(e => note('fehler', 'Benachrichtigungen: ' + e.message)), 30 * 1000);
+  setTimeout(safePoll, 8000);
+  setInterval(() => safePoll(), 30 * 1000);
+  // Turnier/Liga: alle 4 s ein winziger Fingerabdruck – ändert sich etwas (Match bereit, Ergebnis gemeldet,
+  // Herausforderung), sofort die große Abfrage machen statt bis zu 30 s zu warten
+  let stand = null;
+  setInterval(async () => {
+    if (!online) return;
+    try {
+      const v = (await ctx.fetchJson('/api/seitenstand?b=turniere,liga')).v;
+      if (v && stand && v !== stand) { safePoll(); if (ctx.onChange) ctx.onChange(); }
+      if (v) stand = v;
+    } catch { /* nächster Versuch */ }
+  }, 4000);
 }
 
 function diag() {
@@ -388,5 +424,5 @@ function refreshPresence() { presence.update(running, settings().discord); }
 function testToast() {
   toast.show({ kind: 'achievement', icon: '🏅', title: '🏅 Erfolg freigeschaltet', name: 'So sieht ein Erfolg aus', text: 'So kommen Meldungen unten rechts – während Vollbild-Spielen warten sie, bis du wieder raus bist.', foot: 'Test', color: 'legendär', seconds: 7, force: true });
 }
-module.exports = { start, settings, applyAutostart, notify, notifyAction, note, setRunning, refreshPresence, testToast, getRunning: () => running, setGuide, getGuide: () => lastGuide,
+module.exports = { overlay, start, settings, applyAutostart, notify, notifyAction, note, setRunning, refreshPresence, testToast, getRunning: () => running, setGuide, getGuide: () => lastGuide,
                    isOnline: () => online, diag, DEFAULTS };
