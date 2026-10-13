@@ -428,6 +428,9 @@ $('find-down').onclick = () => shellApi.find(fIn.value, {next: true});
 $('find-up').onclick = () => shellApi.find(fIn.value, {next: true, back: true});
 $('find-x').onclick = () => shellApi.findStop();
 shellApi.on('ready', () => $('splash').className = 'splash hide');
+// Vollbild-Spiel läuft, App im Hintergrund: alle Animationen anhalten
+shellApi.on('nap', on => document.documentElement.classList.toggle('nap', !!on));
+{ const st = document.createElement('style'); st.textContent = 'html.nap *{animation-play-state:paused!important;transition:none!important;}'; document.head.append(st); }
 shellApi.on('loading', () => $('splash').className = 'splash');
 shellApi.on('offline', () => { $('splash').className = 'splash offline'; });
 </script>

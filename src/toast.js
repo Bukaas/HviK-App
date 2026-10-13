@@ -19,16 +19,26 @@ let onHeld = null;  // wichtige Meldung (Match bereit) wartet wegen Vollbild -> 
 // 2 = Vollbild-Programm, 3 = Direct3D-Vollbild (Spiel), 4 = Präsentationsmodus
 const FS_SCRIPT = `Add-Type -Namespace H -Name Q -MemberDefinition '[DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int s);';
 $s = 0; [void][H.Q]::SHQueryUserNotificationState([ref]$s); $s`;
-let fsCache = { at: 0, busy: false };
-function fullscreen() {
-  if (Date.now() - fsCache.at < 5000) return Promise.resolve(fsCache.busy);
-  return new Promise(res => execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', FS_SCRIPT], { windowsHide: true, timeout: 8000 },
-    (err, out) => {
-      const state = parseInt(String(out || '').trim(), 10);
-      fsCache = { at: Date.now(), busy: !err && [2, 3, 4].includes(state) };
-      res(fsCache.busy);
-    }));
+// Ein PowerShell-Prozess läuft ruhig im Hintergrund und meldet alle 3 s den Zustand (vorher: bei jeder Prüfung ein neuer
+// PowerShell-Start - das kostet jedes Mal kurz viel CPU und konnte in Spielen ruckeln).
+let fsCache = { at: 0, busy: false }, fsProc = null;
+function fsWatch() {
+  if (fsProc || process.platform !== 'win32') return;
+  const { spawn } = require('child_process');
+  const loop = FS_SCRIPT.replace('$s = 0; [void][H.Q]::SHQueryUserNotificationState([ref]$s); $s', 'while ($true) { $s = 0; [void][H.Q]::SHQueryUserNotificationState([ref]$s); [Console]::Out.WriteLine($s); [Console]::Out.Flush(); Start-Sleep -Seconds 3 }');
+  fsProc = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', loop], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+  fsProc.stdout.on('data', d => {
+    const state = parseInt(String(d).trim().split(/\s+/).pop(), 10);
+    if (!isNaN(state)) fsCache = { at: Date.now(), busy: [2, 3, 4].includes(state) };
+  });
+  fsProc.on('exit', () => { fsProc = null; setTimeout(fsWatch, 30000); });  // abgestürzt -> später neu
+  require('electron').app.on('will-quit', () => { try { fsProc && fsProc.kill(); } catch { /* egal */ } });
 }
+function fullscreen() {
+  fsWatch();
+  return Promise.resolve(fsCache.busy);
+}
+const fullscreenNow = () => { fsWatch(); return fsCache.busy; };
 
 function heightOf(t) {
   return (t.small ? SMALL : H) + (t.buttons && t.buttons.length ? 40 : 0);
@@ -110,4 +120,4 @@ function show(t) {
   next();
 }
 
-module.exports = { show, fullscreen, setHandler: fn => { onAction = fn; }, setMode: fn => { getMode = fn; }, setLook: fn => { getLook = fn; }, setOnHeld: fn => { onHeld = fn; } };
+module.exports = { show, fullscreen, fullscreenNow, setHandler: fn => { onAction = fn; }, setMode: fn => { getMode = fn; }, setLook: fn => { getLook = fn; }, setOnHeld: fn => { onHeld = fn; } };

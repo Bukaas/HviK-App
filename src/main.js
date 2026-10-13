@@ -278,6 +278,19 @@ function createWindow() {
   wc.on('did-start-loading', () => { lastTry = Date.now(); });
   // Wächter: bleibt die Mitte leer (z. B. weil ein Neuversuch abgebrochen wurde), alle 10 s wieder probieren
   setInterval(() => { if (firstLoad && !wc.isLoading() && Date.now() - lastTry > 12000) { lastTry = Date.now(); win.webContents.send('loading'); wc.loadURL(startUrl()); } }, 10000);
+  // Spiel im Vollbild und die App nicht im Vordergrund: Seite + Leiste schlafen legen (keine Grafik, keine Animationen).
+  // Sobald man die App wieder anklickt, ist alles sofort wieder da.
+  let napping = false;
+  const nap = on => {
+    if (on === napping || firstLoad) return;
+    napping = on;
+    view.setVisible(!on);
+    if (fly && on) flyClose(true);
+    try { win.webContents.send('nap', on); } catch { /* egal */ }
+  };
+  setInterval(() => { if (win && !win.isDestroyed()) nap(!win.isFocused() && require('./toast').fullscreenNow()); }, 3000);
+  win.on('focus', () => nap(false));
+  win.on('show', () => nap(false));
   wc.loadURL(startUrl());
   shortcuts(wc);
   shortcuts(win.webContents);
@@ -734,8 +747,10 @@ function setIgnoring(v) {
   ignoring = v;
   win.setIgnoreMouseEvents(v, { forward: true });
 }
+let hitTick = 0;
 setInterval(() => {
   if (!NEU || !win || win.isDestroyed() || !win.isVisible()) return;
+  if (!win.isFocused() && !drag && !resizing && (++hitTick % 8)) return;  // ohne Fokus nur ~4x pro Sekunde prüfen (spart CPU im Spiel)
   if (innerNow || resizing || drag) return setIgnoring(false);
   // in echten Bildschirmpixeln rechnen: bei Bildschirmen mit unterschiedlicher Skalierung (z. B. hochkant mit 125 %)
   // passen die "logischen" Koordinaten von Mauszeiger und Fenster sonst nicht zusammen -> Klicks gingen durchs Fenster
