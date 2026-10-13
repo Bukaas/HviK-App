@@ -278,13 +278,12 @@ function createWindow() {
   wc.on('did-start-loading', () => { lastTry = Date.now(); });
   // Wächter: bleibt die Mitte leer (z. B. weil ein Neuversuch abgebrochen wurde), alle 10 s wieder probieren
   setInterval(() => { if (firstLoad && !wc.isLoading() && Date.now() - lastTry > 12000) { lastTry = Date.now(); win.webContents.send('loading'); wc.loadURL(startUrl()); } }, 10000);
-  // Spiel im Vollbild und die App nicht im Vordergrund: Seite + Leiste schlafen legen (keine Grafik, keine Animationen).
-  // Sobald man die App wieder anklickt, ist alles sofort wieder da.
+  // Spiel im Vollbild und die App nicht im Vordergrund: Leiste ruhen lassen (keine Animationen). Die Mitte bleibt sichtbar -
+  // die Spielseiten drosseln sich ohne Fokus selbst, ein schwarzes Bild beim Raustabben nervt nur.
   let napping = false;
   const nap = on => {
     if (on === napping || firstLoad) return;
     napping = on;
-    view.setVisible(!on);
     if (fly && on) flyClose(true);
     try { win.webContents.send('nap', on); } catch { /* egal */ }
   };
