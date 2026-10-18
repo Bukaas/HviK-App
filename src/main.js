@@ -9,7 +9,8 @@ const fs = require('fs');
 const SITE = process.env.HVIK_SITE || 'https://hvik.org';
 const BAR = 40;  // Höhe der Titelleiste
 // Im App-Fenster bleiben nur hvik.org und der Discord-Login - Einladungen, Kanäle usw. gehen ins Discord-Programm bzw. den Browser
-const ALLOWED = [/^https:\/\/(www\.)?hvik\.org([/?#]|$)/, /^https:\/\/(\w+\.)?discord(app)?\.com\/(oauth2|login|api\/(v\d+\/)?oauth2|register|2fa|verify|reset)/,
+const ALLOWED = [/^https:\/\/(www\.|werkstatt\.)?hvik\.org([/?#]|$)/,  // werkstatt.hvik.org = Werkstatt (zweite Spielkopie zum Bauen)
+                 /^https:\/\/(\w+\.)?discord(app)?\.com\/(oauth2|login|api\/(v\d+\/)?oauth2|register|2fa|verify|reset)/,
                  /^https:\/\/(\w+\.)?hcaptcha\.com\//];
 
 nativeTheme.themeSource = 'dark';
