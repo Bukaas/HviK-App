@@ -126,7 +126,7 @@ async function statusProjekt(einst) {
   if (!godot || !ordner) return { modus: 'projekt', installiert: false, laeuft: laeuft(), ordner, fehler: !godot ? 'Godot 4.7 nicht gefunden' : 'HviK-Welt-Ordner nicht gefunden' };
   if (laden) return { modus: 'projekt', installiert: true, laedt: true, prozent: laden.prozent, text: laden.text, ordner };
   const s = await gitStand(ordner);
-  return { modus: 'projekt', installiert: true, laeuft: laeuft(), ordner, version: s.version, update: s.hinter > 0, neuste: s.neuste + (s.hinter ? ` (+${s.hinter})` : ''), fehler: s.fehler };
+  return { modus: 'projekt', installiert: true, projekt_da: true, laeuft: laeuft(), ordner, version: s.version, update: s.hinter > 0, neuste: s.neuste + (s.hinter ? ` (+${s.hinter})` : ''), fehler: s.fehler };
 }
 
 async function einrichtenProjekt(einst, { waehleOrdner, waehleDatei, speichern }) {
@@ -189,4 +189,17 @@ async function starten(einst, name, ausweis) {
   return { ok: true };
 }
 
-module.exports = { status, installieren, starten, EXE };
+// Lokal: eigener HviK-Welt-Ordner ohne Server, ohne Update/git pull – zum Testen, bevor etwas hochgeladen wird
+async function lokal(einst, name) {
+  if (laeuft()) return { ok: false, message: 'Läuft schon.' };
+  const godot = godotFinden(einst), ordner = projektFinden(einst);
+  if (!godot || !ordner) return { ok: false, message: 'Godot oder HviK-Welt-Ordner fehlt.' };
+  const extra = ['--', '--offline'];
+  if (name) extra.push('--name=' + String(name).slice(0, 40));
+  kind = spawn(godot, ['--path', ordner, ...extra], { cwd: ordner, detached: true, stdio: 'ignore' });
+  kind.unref();
+  kind.once('exit', () => { relZeit = 0; fetchZeit = 0; });
+  return { ok: true };
+}
+
+module.exports = { status, installieren, starten, lokal, EXE };

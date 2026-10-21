@@ -559,6 +559,13 @@ ipcMain.handle('spiel-starten', async (e, name) => {
   return r;
 });
 
+ipcMain.handle('spiel-lokal', async (e, name) => {   // Admins: aus dem Projektordner ohne Server (Test vor dem Hochladen)
+  if (!fromSite(e)) return null;
+  const r = await spiel.lokal(loadSettings(), name);
+  if (r.ok) background.setRunning({ label: 'HviK Community Place (lokal)', icon: '🖥', url: '/app/launcher', title: 'Lokal', procs: ['Godot_v4.7.2-stable_win64.exe'] });
+  return r;
+});
+
 // ---------- Archipelago - nur für Seiten von hvik.org ----------
 async function download(url) {  // öffentliche Dateien (GitHub-Releases)
   const r = await session.fromPartition('persist:hvik').fetch(url, { cache: 'no-store' });

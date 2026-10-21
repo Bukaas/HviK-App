@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('hvikApp', {
     installieren: () => ipcRenderer.invoke('spiel-installieren'),
     starten: name => ipcRenderer.invoke('spiel-starten', name || ''),
     modus: m => ipcRenderer.invoke('spiel-modus', m),
+    lokal: name => ipcRenderer.invoke('spiel-lokal', name || ''),
   },
   ap: {
     status: rid => ipcRenderer.invoke('ap-status', rid),
