@@ -151,10 +151,12 @@ html,body{margin:0;height:100%;background:transparent;color:#eef2ff;font-family:
   <button class="it" data-go="/spiele" data-fly="spiele" data-m="^/spiele" title="In-App Games"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="11" height="15" rx="2" transform="rotate(-12 8.5 13.5)"/><rect x="10" y="3" width="11" height="15" rx="2" transform="rotate(10 15.5 10.5)"/><path d="M15.5 8.5l1.2 2.2-1.2 2.2-1.2-2.2z"/></svg></button>
   <button class="it" data-go="/app/events" data-fly="events" data-m="^/(app/events|liga|events|tournaments|turnier|termine)" title="Events &amp; Termine"><span class="nd" id="nd-events"></span><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M8 14h2M12 14h2M8 17h2"/></svg></button>
   <button class="it" data-go="/leaderboards" data-m="^/leaderboards" title="Leaderboard"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6"/></svg></button>
+  <button class="it" data-go="/app/launcher" data-m="^/app/launcher" title="Launcher – HviK Community Place"><svg viewBox="0 0 24 24"><path d="M12 3c3.5 2 5.5 5.5 5.5 9.5L15 15H9l-2.5-2.5C6.5 8.5 8.5 5 12 3z"/><circle cx="12" cy="9.5" r="1.8"/><path d="M9 15l-2.5 4.5L10 18M15 15l2.5 4.5L14 18"/></svg></button>
   <span class="sep" id="sep" hidden></span>
   <div class="live" id="live"></div>
   <button class="it" data-site="bell" title="Benachrichtigungen"><svg viewBox="0 0 24 24"><path d="M6 9a6 6 0 0 1 12 0c0 6 2 8 2 8H4s2-2 2-8"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span class="bdg" id="bdg-bell"></span></button>
   <button class="onl" data-site="online" title="Wer ist gerade online?"><em></em><span id="onl-n">–</span></button>
+  <button class="it" id="b-admin" data-go="/app/admin" data-m="^/(app/(admin|dev)|admin)" title="Admin" style="display:none"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg></button>
   <button class="it" data-go="/app/einstellungen" data-m="^/app/einstellungen" title="Einstellungen"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   <button class="me" id="me" data-site="user" title="Dein Profil"></button>
 </nav>
@@ -319,7 +321,7 @@ function renderRail() {
 }
 // beim Scrollen in der Leiste: offenes Live-Fenster zu (es hinge sonst neben der falschen Kachel)
 $('live').addEventListener('scroll', () => { if (flyOpenFor && flyOpenFor.startsWith('live:')) closeFly(0); }, { passive: true });
-shellApi.on('rail', d => { rail$ = d; renderRail(); });
+shellApi.on('rail', d => { rail$ = d; $('b-admin').style.display = d && d.verwalten ? '' : 'none'; renderRail(); });
 setInterval(() => { if (rail$ && rail$.next) renderRail(); }, 30000);  // Countdown weiterzählen
 function closeFly(delay) {
   clearTimeout(flyT);
