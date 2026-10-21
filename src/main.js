@@ -2,6 +2,7 @@
 const { app, BrowserWindow, WebContentsView, ipcMain, shell, nativeTheme, session, dialog, Menu } = require('electron');
 const minecraft = require('./minecraft');
 const archipelago = require('./archipelago');
+const spiel = require('./spiel');
 const background = require('./background');
 const path = require('path');
 const fs = require('fs');
@@ -527,6 +528,33 @@ ipcMain.handle('mc-pick-root', async e => {
   if (r.canceled || !r.filePaths[0]) return { ok: false };
   saveSettings({ ...loadSettings(), cfRoot: r.filePaths[0] });
   return { ok: true, path: r.filePaths[0] };
+});
+
+// ---------- HviK Community Place (Launcher, vorerst Tester: Spiel aus dem eigenen HviK-Welt-Ordner) ----------
+ipcMain.handle('spiel-status', async e => {
+  if (!fromSite(e)) return null;
+  try { return await spiel.status(loadSettings()); } catch (err) { return { installiert: false, fehler: err.message }; }
+});
+ipcMain.handle('spiel-installieren', async e => {
+  if (!fromSite(e)) return null;
+  try {
+    return await spiel.installieren(loadSettings(), {
+      waehleOrdner: async title => { const r = await dialog.showOpenDialog(win, { title, properties: ['openDirectory'] }); return r.canceled ? '' : r.filePaths[0]; },
+      waehleDatei: async title => { const r = await dialog.showOpenDialog(win, { title, properties: ['openFile'], filters: [{ name: 'Godot', extensions: ['exe'] }] }); return r.canceled ? '' : r.filePaths[0]; },
+      speichern: patch => saveSettings({ ...loadSettings(), ...patch }),
+    });
+  } catch (err) { return { ok: false, message: err.message }; }
+});
+ipcMain.handle('spiel-modus', async (e, m) => {   // Tester: 'projekt' (eigener HviK-Welt-Ordner) oder 'version'
+  if (!fromSite(e)) return null;
+  saveSettings({ ...loadSettings(), spielModus: m === 'projekt' ? 'projekt' : 'version' });
+  return { ok: true };
+});
+ipcMain.handle('spiel-starten', async (e, name) => {
+  if (!fromSite(e)) return null;
+  const r = spiel.starten(loadSettings(), name);
+  if (r.ok) background.setRunning({ label: 'HviK Community Place', icon: '🏡', url: '/app/launcher', title: 'In der Welt', procs: [spiel.EXE, 'Godot_v4.7.2-stable_win64.exe'] });
+  return r;
 });
 
 // ---------- Archipelago - nur für Seiten von hvik.org ----------

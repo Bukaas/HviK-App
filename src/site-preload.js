@@ -42,6 +42,12 @@ contextBridge.exposeInMainWorld('hvikApp', {
     pickFolder: () => ipcRenderer.invoke('mc-pick-root'),
     onProgress: fn => { ipcRenderer.removeAllListeners('mc-progress'); ipcRenderer.on('mc-progress', (e, t) => fn(t)); },
   },
+  spiel: {   // Launcher: HviK Community Place
+    status: () => ipcRenderer.invoke('spiel-status'),
+    installieren: () => ipcRenderer.invoke('spiel-installieren'),
+    starten: name => ipcRenderer.invoke('spiel-starten', name || ''),
+    modus: m => ipcRenderer.invoke('spiel-modus', m),
+  },
   ap: {
     status: rid => ipcRenderer.invoke('ap-status', rid),
     play: (rid, setupOnly, mode) => ipcRenderer.invoke('ap-play', rid, !!setupOnly, mode || ''),
