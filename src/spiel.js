@@ -20,8 +20,8 @@ const laeuft = () => !!(kind && kind.exitCode === null);
 const modus = einst => (einst.spielModus === 'projekt' ? 'projekt' : 'version');
 
 // ---------------------------------------------------------------- fertige Version (für alle)
-async function neuste() {
-  if (rel && Date.now() - relZeit < 300000) return rel;
+async function neuste(frisch = false) {
+  if (!frisch && rel && Date.now() - relZeit < 60000) return rel;   // höchstens 1 Min. alt (vor dem Start immer frisch)
   const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { 'User-Agent': 'HviK-App', Accept: 'application/vnd.github+json' } });
   if (!r.ok) throw new Error(r.status === 404 ? 'Noch keine Spiel-Version veröffentlicht' : `GitHub antwortet nicht (${r.status})`);
   const d = await r.json();
@@ -161,8 +161,14 @@ async function installieren(einst, hilfen) {
   try { return await herunterladen(); } catch (err) { return { ok: false, message: err.message }; }
 }
 
-function starten(einst, name, ausweis) {
+async function starten(einst, name, ausweis) {
   if (laeuft()) return { ok: false, message: 'Läuft schon.' };
+  if (modus(einst) !== 'projekt') {   // vor jedem Start: gibt es eine neuere Version? Dann erst updaten.
+    try {
+      const n = await neuste(true);
+      if (installiert() && n.version !== installiert()) return { ok: false, update: true, message: `Neue Version ${n.version} – bitte erst aktualisieren.` };
+    } catch { /* GitHub nicht erreichbar -> mit der installierten Version spielen */ }
+  }
   const extra = ['--'];
   if (name) extra.push('--name=' + String(name).slice(0, 40));
   if (ausweis) extra.push('--ausweis=' + ausweis);   // von hvik.org signiert: wer bin ich, bin ich Admin
@@ -176,6 +182,7 @@ function starten(einst, name, ausweis) {
     kind = spawn(exe, extra, { cwd: ZIEL, detached: true, stdio: 'ignore' });
   }
   kind.unref();
+  kind.once('exit', () => { relZeit = 0; fetchZeit = 0; });   // nach dem Schließen sofort neu prüfen
   return { ok: true };
 }
 

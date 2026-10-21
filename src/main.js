@@ -554,7 +554,7 @@ ipcMain.handle('spiel-starten', async (e, name) => {
   if (!fromSite(e)) return null;
   let ausweis = '';
   try { const a = await siteGet('/api/spiel/ausweis', true); if (a && a.ok) { ausweis = a.ausweis; name = a.name || name; } } catch { /* ohne Ausweis = Gast */ }
-  const r = spiel.starten(loadSettings(), name, ausweis);
+  const r = await spiel.starten(loadSettings(), name, ausweis);
   if (r.ok) background.setRunning({ label: 'HviK Community Place', icon: '🏡', url: '/app/launcher', title: 'In der Welt', procs: [spiel.EXE, 'Godot_v4.7.2-stable_win64.exe'] });
   return r;
 });
