@@ -561,7 +561,9 @@ ipcMain.handle('spiel-starten', async (e, name) => {
 
 ipcMain.handle('spiel-lokal', async (e, name) => {   // Admins: aus dem Projektordner ohne Server (Test vor dem Hochladen)
   if (!fromSite(e)) return null;
-  const r = await spiel.lokal(loadSettings(), name);
+  let live = null;   // aktuelle Live-Welt holen -> lokale Welt wird damit abgeglichen
+  try { const s = await siteGet('/api/spiel/welt_stand', true); if (s && s.ok) live = s; } catch { /* offline: lokale Welt wie sie ist */ }
+  const r = await spiel.lokal(loadSettings(), name, live);
   if (r.ok) background.setRunning({ label: 'HviK Community Place (lokal)', icon: '🖥', url: '/app/launcher', title: 'Lokal', procs: ['Godot_v4.7.2-stable_win64.exe'] });
   return r;
 });

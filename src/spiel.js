@@ -189,17 +189,45 @@ async function starten(einst, name, ausweis) {
   return { ok: true };
 }
 
-// Lokal: eigener HviK-Welt-Ordner ohne Server, ohne Update/git pull – zum Testen, bevor etwas hochgeladen wird
-async function lokal(einst, name) {
+// Live-Welt in die lokale Bau-Datei (welt/gebaut.json) übernehmen: was live ist, gilt (neu/geändert/gelöscht);
+// was nur lokal gebaut wurde, bleibt. Welche Dinge von live kamen, merkt sich %LOCALAPPDATA%\HviK Lokal\live_uids.json.
+const LOKAL = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'HviK Lokal');
+function liveAbgleichen(ordner, live) {
+  const datei = path.join(ordner, 'welt', 'gebaut.json');
+  const merk = path.join(LOKAL, 'live_uids.json');
+  let g = { version: 2, gelaende: [], wege: [], teile: [] };
+  try { g = JSON.parse(fs.readFileSync(datei, 'utf8')); } catch { /* neu */ }
+  let alt = { teile: [], wege: [], gelaende: [] };
+  try { alt = { ...alt, ...JSON.parse(fs.readFileSync(merk, 'utf8')) }; } catch { /* erstes Mal */ }
+  const lt = live.teile || {}, lw = live.wege || {}, lg = live.gelaende || {};
+  const nurLokal = (liste, schl, liveDict, altListe) => (liste || []).filter(x => !(x[schl] in liveDict) && !altListe.includes(x[schl]));
+  const teile = nurLokal(g.teile, 'uid', lt, alt.teile);
+  for (const [uid, t] of Object.entries(lt)) teile.push({ id: t.id, uid, t: t.t });
+  const wege = nurLokal(g.wege, 'uid', lw, alt.wege);
+  for (const w of Object.values(lw)) wege.push(w);
+  const gelaende = [];
+  for (const id of (live.reihe || Object.keys(lg))) if (lg[id]) gelaende.push(lg[id]);   // live zuerst (Reihenfolge zählt)
+  gelaende.push(...nurLokal(g.gelaende, 'id', lg, alt.gelaende));
+  fs.writeFileSync(datei, JSON.stringify({ ...g, version: 2, gelaende, wege, teile }, null, '	'));
+  fs.mkdirSync(LOKAL, { recursive: true });
+  fs.writeFileSync(merk, JSON.stringify({ teile: Object.keys(lt), wege: Object.keys(lw), gelaende: Object.keys(lg) }));
+  return { teile: Object.keys(lt).length, wege: Object.keys(lw).length };
+}
+
+// Lokal: eigener HviK-Welt-Ordner ohne Server, ohne Update/git pull – zum Testen, bevor etwas hochgeladen wird.
+// live = Bau-Stand der Live-Welt (von hvik.org) -> vorher abgleichen
+async function lokal(einst, name, live) {
   if (laeuft()) return { ok: false, message: 'Läuft schon.' };
   const godot = godotFinden(einst), ordner = projektFinden(einst);
   if (!godot || !ordner) return { ok: false, message: 'Godot oder HviK-Welt-Ordner fehlt.' };
+  let abgleich = null;
+  if (live) { try { abgleich = liveAbgleichen(ordner, live); } catch (err) { abgleich = { fehler: err.message }; } }
   const extra = ['--', '--offline'];
   if (name) extra.push('--name=' + String(name).slice(0, 40));
   kind = spawn(godot, ['--path', ordner, ...extra], { cwd: ordner, detached: true, stdio: 'ignore' });
   kind.unref();
   kind.once('exit', () => { relZeit = 0; fetchZeit = 0; });
-  return { ok: true };
+  return { ok: true, abgleich };
 }
 
 module.exports = { status, installieren, starten, lokal, EXE };
