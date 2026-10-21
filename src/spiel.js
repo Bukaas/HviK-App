@@ -18,6 +18,7 @@ let fetchZeit = 0, fetchStand = null; // Projekt-Modus: git-Stand
 
 const laeuft = () => !!(kind && kind.exitCode === null);
 const modus = einst => (einst.spielModus === 'projekt' ? 'projekt' : 'version');
+const projektDa = einst => !!(godotFinden(einst) && projektFinden(einst));   // Admins: Projektordner-Modus möglich?
 
 // ---------------------------------------------------------------- fertige Version (für alle)
 async function neuste(frisch = false) {
@@ -44,7 +45,7 @@ async function statusVersion() {
   let n = null, fehler = '';
   try { n = await neuste(); } catch (err) { fehler = err.message; }
   return { modus: 'version', installiert: !!v, laeuft: laeuft(), version: v, neuste: n ? n.version : '', update: !!(v && n && n.version !== v),
-           groesse: n ? mb(n.groesse) : '', ordner: ZIEL, fehler };
+           groesse: n ? mb(n.groesse) : '', ordner: ZIEL, fehler, projekt_da: projektDa(einstAktuell), modus_gewaehlt: !!einstAktuell.spielModus };
 }
 
 async function herunterladen() {
@@ -152,7 +153,9 @@ async function einrichtenProjekt(einst, { waehleOrdner, waehleDatei, speichern }
 }
 
 // ---------------------------------------------------------------- nach außen
+let einstAktuell = {};
 async function status(einst) {
+  einstAktuell = einst;
   return modus(einst) === 'projekt' ? statusProjekt(einst) : statusVersion();
 }
 
