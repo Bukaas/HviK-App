@@ -161,9 +161,11 @@ async function installieren(einst, hilfen) {
   try { return await herunterladen(); } catch (err) { return { ok: false, message: err.message }; }
 }
 
-function starten(einst, name) {
+function starten(einst, name, ausweis) {
   if (laeuft()) return { ok: false, message: 'Läuft schon.' };
-  const extra = name ? ['--', '--name=' + String(name).slice(0, 40)] : [];
+  const extra = ['--'];
+  if (name) extra.push('--name=' + String(name).slice(0, 40));
+  if (ausweis) extra.push('--ausweis=' + ausweis);   // von hvik.org signiert: wer bin ich, bin ich Admin
   if (modus(einst) === 'projekt') {
     const godot = godotFinden(einst), ordner = projektFinden(einst);
     if (!godot || !ordner) return { ok: false, message: 'Godot oder HviK-Welt-Ordner fehlt.' };
