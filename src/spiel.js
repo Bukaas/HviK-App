@@ -8,6 +8,8 @@ const os = require('os');
 const AdmZip = require('adm-zip');
 
 const REPO = 'Bukaas/HviK-Spiel';
+const PROJEKT_GIT = 'https://github.com/Bukaas/HviK-Welt.git';   // Godot-Projekt (privat – Zugriff über das eigene GitHub-Konto)
+const GODOT_ZIP = 'https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_win64.exe.zip';
 const ZIEL = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'HviK Spiel');
 const EXE = 'HviK Community Place.exe';
 
@@ -91,7 +93,7 @@ function istProjekt(p) {
 
 function godotFinden(einst) {
   if (einst.godotExe && fs.existsSync(einst.godotExe)) return einst.godotExe;
-  for (const ordner of ['C:\\Godot', path.join(os.homedir(), 'Godot'), path.join(os.homedir(), 'Desktop'), path.join(os.homedir(), 'Downloads')]) {
+  for (const ordner of [path.join(LOKAL, 'Godot'), 'C:\\Godot', path.join(os.homedir(), 'Godot'), path.join(os.homedir(), 'Desktop'), path.join(os.homedir(), 'Downloads')]) {
     try {
       const t = fs.readdirSync(ordner).filter(f => /^Godot_v4\.7.*win64\.exe$/i.test(f) && !/console/i.test(f)).sort().reverse();
       if (t[0]) return path.join(ordner, t[0]);
@@ -202,7 +204,7 @@ function liveAbgleichen(ordner, live) {
   const lt = live.teile || {}, lw = live.wege || {}, lg = live.gelaende || {};
   const nurLokal = (liste, schl, liveDict, altListe) => (liste || []).filter(x => !(x[schl] in liveDict) && !altListe.includes(x[schl]));
   const teile = nurLokal(g.teile, 'uid', lt, alt.teile);
-  for (const [uid, t] of Object.entries(lt)) teile.push({ id: t.id, uid, t: t.t });
+  for (const [uid, t] of Object.entries(lt)) teile.push(t.x ? { id: t.id, uid, t: t.t, x: t.x } : { id: t.id, uid, t: t.t });   // x = Zusatzangaben (z. B. Stuhl am Tisch)
   const wege = nurLokal(g.wege, 'uid', lw, alt.wege);
   for (const w of Object.values(lw)) wege.push(w);
   const gelaende = [];
@@ -214,12 +216,79 @@ function liveAbgleichen(ordner, live) {
   return { teile: Object.keys(lt).length, wege: Object.keys(lw).length };
 }
 
-// Lokal: eigener HviK-Welt-Ordner ohne Server, ohne Update/git pull – zum Testen, bevor etwas hochgeladen wird.
+// Datei mit Fortschritt laden (Fortschritt erscheint im Launcher über status() -> laden)
+async function ladeDatei(url, datei, von, bis, wasText) {
+  const r = await fetch(url, { headers: { 'User-Agent': 'HviK-App' } });
+  if (!r.ok || !r.body) throw new Error(`Download fehlgeschlagen (${r.status})`);
+  const gesamt = Number(r.headers.get('content-length')) || 1;
+  const out = fs.createWriteStream(datei);
+  let da = 0;
+  const leser = r.body.getReader();
+  for (;;) {
+    const { done, value } = await leser.read();
+    if (done) break;
+    da += value.length;
+    if (!out.write(Buffer.from(value))) await new Promise(ok => out.once('drain', ok));
+    laden = { prozent: von + (bis - von) * Math.min(1, da / gesamt), text: `${wasText} – ${mb(da)} von ${mb(gesamt)}` };
+  }
+  await new Promise((ok, fehler) => out.end(err => (err ? fehler(err) : ok())));
+}
+
+const warte = (exe, args, cwd, timeout) => new Promise((ok, fehler) =>
+  execFile(exe, args, { cwd, timeout, windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, err => err ? fehler(err) : ok()));
+
+// Alles für „Lokal starten“ bereitstellen – fehlt etwas, wird es geholt (z. B. bei Haniel):
+// Godot 4.7.2 (nach %LOCALAPPDATA%\HviK Lokal\Godot), HviK-Welt (git clone nach Dokumente), neuester Stand (git pull),
+// beim ersten Mal das Projekt einlesen (Godot --import).
+async function lokalVorbereiten(einst) {
+  let godot = godotFinden(einst), ordner = projektFinden(einst);
+  try {
+    if (!godot) {
+      fs.mkdirSync(path.join(LOKAL, 'Godot'), { recursive: true });
+      const zip = path.join(LOKAL, 'godot.zip');
+      await ladeDatei(GODOT_ZIP, zip, 0, 30, 'Lade Godot 4.7.2');
+      laden = { prozent: 31, text: 'Entpacke Godot …' };
+      await new Promise(ok => setImmediate(ok));
+      new AdmZip(zip).extractAllTo(path.join(LOKAL, 'Godot'), true);
+      fs.rmSync(zip, { force: true });
+      godot = godotFinden(einst);
+      if (!godot) throw new Error('Godot konnte nicht entpackt werden.');
+    }
+    if (!ordner) {
+      try { await warte('git', ['--version'], os.homedir(), 15000); }
+      catch { throw new Error('Für „Lokal starten“ wird Git gebraucht – bitte installieren (https://git-scm.com/download/win) und nochmal drücken.'); }
+      ordner = path.join(os.homedir(), 'Documents', 'HviK-Welt');
+      if (fs.existsSync(ordner) && fs.readdirSync(ordner).length) throw new Error(`Der Ordner ${ordner} ist nicht leer, aber kein HviK-Welt-Projekt.`);
+      laden = { prozent: 35, text: 'Lade das Spiel-Projekt (HviK-Welt) – beim ersten Mal fragt GitHub evtl. nach deinem Login …' };
+      await warte('git', ['clone', '--depth', '1', PROJEKT_GIT, ordner], os.homedir(), 30 * 60000);
+      if (!istProjekt(ordner)) throw new Error('Das Spiel-Projekt konnte nicht geladen werden.');
+    } else {
+      laden = { prozent: 40, text: 'Prüfe, ob es einen neuen Stand gibt …' };
+      fetchZeit = 0;
+      const s = await gitStand(ordner);
+      if (s.hinter > 0) {
+        laden = { prozent: 45, text: `Hole den neuesten Stand (${s.hinter} neue Änderungen) …` };
+        await git(ordner, ['pull', '-q', '--rebase', '--autostash'], 10 * 60000).catch(() => { /* lokale Arbeit geht vor – dann eben mit dem alten Stand */ });
+      }
+    }
+    if (!fs.existsSync(path.join(ordner, '.godot', 'imported'))) {
+      laden = { prozent: 60, text: 'Bereite das Spiel vor (nur beim ersten Mal, dauert ein paar Minuten) …' };
+      await warte(godot, ['--headless', '--path', ordner, '--import'], ordner, 40 * 60000).catch(() => { /* Godot meldet beim Einlesen gern Warnungen */ });
+    }
+    return { godot, ordner };
+  } finally {
+    laden = null; fetchZeit = 0;
+  }
+}
+
+// Lokal: eigener HviK-Welt-Ordner ohne Server – zum Testen, bevor etwas hochgeladen wird. Fehlt etwas, wird es vorher geholt.
 // live = Bau-Stand der Live-Welt (von hvik.org) -> vorher abgleichen
 async function lokal(einst, name, live) {
   if (laeuft()) return { ok: false, message: 'Läuft schon.' };
-  const godot = godotFinden(einst), ordner = projektFinden(einst);
-  if (!godot || !ordner) return { ok: false, message: 'Godot oder HviK-Welt-Ordner fehlt.' };
+  if (laden) return { ok: false, message: 'Wird gerade vorbereitet …' };
+  let godot, ordner;
+  try { ({ godot, ordner } = await lokalVorbereiten(einst)); }
+  catch (err) { return { ok: false, message: err.message }; }
   let abgleich = null;
   if (live) { try { abgleich = liveAbgleichen(ordner, live); } catch (err) { abgleich = { fehler: err.message }; } }
   const extra = ['--', '--offline'];
@@ -230,4 +299,4 @@ async function lokal(einst, name, live) {
   return { ok: true, abgleich };
 }
 
-module.exports = { status, installieren, starten, lokal, EXE };
+module.exports = { status, installieren, starten, lokal, EXE, _test: { ladeDatei, GODOT_ZIP } };
