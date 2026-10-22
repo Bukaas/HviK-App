@@ -191,30 +191,8 @@ async function starten(einst, name, ausweis) {
   return { ok: true };
 }
 
-// Live-Welt in die lokale Bau-Datei (welt/gebaut.json) übernehmen: was live ist, gilt (neu/geändert/gelöscht);
-// was nur lokal gebaut wurde, bleibt. Welche Dinge von live kamen, merkt sich %LOCALAPPDATA%\HviK Lokal\live_uids.json.
+// Ordner für App-Daten von „Lokal starten“ (z. B. heruntergeladenes Godot)
 const LOKAL = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'HviK Lokal');
-function liveAbgleichen(ordner, live) {
-  const datei = path.join(ordner, 'welt', 'gebaut.json');
-  const merk = path.join(LOKAL, 'live_uids.json');
-  let g = { version: 2, gelaende: [], wege: [], teile: [] };
-  try { g = JSON.parse(fs.readFileSync(datei, 'utf8')); } catch { /* neu */ }
-  let alt = { teile: [], wege: [], gelaende: [] };
-  try { alt = { ...alt, ...JSON.parse(fs.readFileSync(merk, 'utf8')) }; } catch { /* erstes Mal */ }
-  const lt = live.teile || {}, lw = live.wege || {}, lg = live.gelaende || {};
-  const nurLokal = (liste, schl, liveDict, altListe) => (liste || []).filter(x => !(x[schl] in liveDict) && !altListe.includes(x[schl]));
-  const teile = nurLokal(g.teile, 'uid', lt, alt.teile);
-  for (const [uid, t] of Object.entries(lt)) teile.push(t.x ? { id: t.id, uid, t: t.t, x: t.x } : { id: t.id, uid, t: t.t });   // x = Zusatzangaben (z. B. Stuhl am Tisch)
-  const wege = nurLokal(g.wege, 'uid', lw, alt.wege);
-  for (const w of Object.values(lw)) wege.push(w);
-  const gelaende = [];
-  for (const id of (live.reihe || Object.keys(lg))) if (lg[id]) gelaende.push(lg[id]);   // live zuerst (Reihenfolge zählt)
-  gelaende.push(...nurLokal(g.gelaende, 'id', lg, alt.gelaende));
-  fs.writeFileSync(datei, JSON.stringify({ ...g, version: 2, gelaende, wege, teile }, null, '	'));
-  fs.mkdirSync(LOKAL, { recursive: true });
-  fs.writeFileSync(merk, JSON.stringify({ teile: Object.keys(lt), wege: Object.keys(lw), gelaende: Object.keys(lg) }));
-  return { teile: Object.keys(lt).length, wege: Object.keys(lw).length };
-}
 
 // Datei mit Fortschritt laden (Fortschritt erscheint im Launcher über status() -> laden)
 async function ladeDatei(url, datei, von, bis, wasText) {
@@ -281,22 +259,22 @@ async function lokalVorbereiten(einst) {
   }
 }
 
-// Lokal: eigener HviK-Welt-Ordner ohne Server – zum Testen, bevor etwas hochgeladen wird. Fehlt etwas, wird es vorher geholt.
-// live = Bau-Stand der Live-Welt (von hvik.org) -> vorher abgleichen
-async function lokal(einst, name, live) {
+// Lokal: Code aus dem eigenen HviK-Welt-Ordner (fehlt etwas, wird es vorher geholt) in einer eigenen TESTWELT
+// (offline, Datei user://testwelt.json im Spiel) – zum Bauen/Testen von Häusern, Möbeln, Skripten. Nichts davon geht live und es
+// wird nichts abgeglichen: Die echte Welt gibt es nur auf dem Welt-Server (bearbeitet über „Spielen“). Neue Teile kommen per
+// Spiel-Update in den Katalog und werden dann in der Live-Welt aktiv eingebaut.
+async function lokal(einst, name) {
   if (laeuft()) return { ok: false, message: 'Läuft schon.' };
   if (laden) return { ok: false, message: 'Wird gerade vorbereitet …' };
   let godot, ordner;
   try { ({ godot, ordner } = await lokalVorbereiten(einst)); }
   catch (err) { return { ok: false, message: err.message }; }
-  let abgleich = null;
-  if (live) { try { abgleich = liveAbgleichen(ordner, live); } catch (err) { abgleich = { fehler: err.message }; } }
-  const extra = ['--', '--offline'];
+  const extra = ['--', '--offline', '--testwelt'];
   if (name) extra.push('--name=' + String(name).slice(0, 40));
   kind = spawn(godot, ['--path', ordner, ...extra], { cwd: ordner, detached: true, stdio: 'ignore' });
   kind.unref();
   kind.once('exit', () => { relZeit = 0; fetchZeit = 0; });
-  return { ok: true, abgleich };
+  return { ok: true };
 }
 
 module.exports = { status, installieren, starten, lokal, EXE, _test: { ladeDatei, GODOT_ZIP } };
