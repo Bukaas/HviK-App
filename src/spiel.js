@@ -259,17 +259,31 @@ async function lokalVorbereiten(einst) {
   }
 }
 
-// Lokal: Code aus dem eigenen HviK-Welt-Ordner (fehlt etwas, wird es vorher geholt) in einer eigenen TESTWELT
-// (offline, Datei user://testwelt.json im Spiel) – zum Bauen/Testen von Häusern, Möbeln, Skripten. Nichts davon geht live und es
-// wird nichts abgeglichen: Die echte Welt gibt es nur auf dem Welt-Server (bearbeitet über „Spielen“). Neue Teile kommen per
-// Spiel-Update in den Katalog und werden dann in der Live-Welt aktiv eingebaut.
-async function lokal(einst, name) {
+// Testwelt = frische Kopie der Live-Welt (nur Live -> lokal, nie zurück): welt/testwelt.json im Projektordner
+function testweltSchreiben(ordner, live) {
+  const datei = path.join(ordner, 'welt', 'testwelt.json');
+  const teile = Object.entries(live.teile || {}).map(([uid, t]) => (t.x ? { id: t.id, uid, t: t.t, x: t.x } : { id: t.id, uid, t: t.t }));
+  const wege = Object.values(live.wege || {});
+  const g = live.gelaende || {};
+  const gelaende = (live.reihe || Object.keys(g)).filter(id => g[id]).map(id => g[id]);
+  fs.mkdirSync(path.dirname(datei), { recursive: true });
+  fs.writeFileSync(datei, JSON.stringify({ version: 2, gelaende, wege, teile }, null, '	'));
+  return datei;
+}
+
+// Lokal: Code aus dem eigenen HviK-Welt-Ordner (fehlt etwas, wird es vorher geholt) in der TESTWELT (offline) – zum Bauen/Testen
+// von Häusern, Möbeln, Skripten mit der echten Map drumherum. Die Testwelt wird bei jedem Start frisch aus der Live-Welt geschrieben;
+// was man darin baut, geht nie live. Die echte Welt gibt es nur auf dem Welt-Server (bearbeitet über „Spielen“) – neue Teile kommen
+// per Spiel-Update in den Katalog und werden dort aktiv eingebaut.
+async function lokal(einst, name, live) {
   if (laeuft()) return { ok: false, message: 'Läuft schon.' };
   if (laden) return { ok: false, message: 'Wird gerade vorbereitet …' };
   let godot, ordner;
   try { ({ godot, ordner } = await lokalVorbereiten(einst)); }
   catch (err) { return { ok: false, message: err.message }; }
-  const extra = ['--', '--offline', '--testwelt'];
+  let datei = path.join(ordner, 'welt', 'testwelt.json');
+  if (live) { try { datei = testweltSchreiben(ordner, live); } catch { /* dann die letzte Testwelt */ } }
+  const extra = ['--', '--offline', '--testwelt=' + datei.split(path.sep).join('/')];
   if (name) extra.push('--name=' + String(name).slice(0, 40));
   kind = spawn(godot, ['--path', ordner, ...extra], { cwd: ordner, detached: true, stdio: 'ignore' });
   kind.unref();

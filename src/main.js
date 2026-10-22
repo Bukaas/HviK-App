@@ -559,9 +559,11 @@ ipcMain.handle('spiel-starten', async (e, name) => {
   return r;
 });
 
-ipcMain.handle('spiel-lokal', async (e, name) => {   // Admins + Tester: Code aus dem Projektordner in der eigenen Testwelt (offline)
+ipcMain.handle('spiel-lokal', async (e, name) => {   // Admins + Tester: Code aus dem Projektordner in der Testwelt (Kopie der Live-Welt, offline)
   if (!fromSite(e)) return null;
-  const r = await spiel.lokal(loadSettings(), name);
+  let live = null;   // aktueller Live-Stand -> wird zur Testwelt (nur in diese Richtung)
+  try { const s = await siteGet('/api/spiel/welt_stand', true); if (s && s.ok) live = s; } catch { /* dann die letzte Testwelt */ }
+  const r = await spiel.lokal(loadSettings(), name, live);
   if (r.ok) background.setRunning({ label: 'HviK Community Place (Testwelt)', icon: '🧪', url: '/app/launcher', title: 'Testwelt', procs: ['Godot_v4.7.2-stable_win64.exe'] });
   return r;
 });
