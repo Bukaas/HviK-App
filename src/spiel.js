@@ -87,6 +87,22 @@ async function herunterladen() {
 const git = (ordner, args, timeout = 60000) => new Promise((ok, fehler) =>
   execFile('git', args, { cwd: ordner, timeout, windowsHide: true }, (err, out, errOut) => err ? fehler(new Error((errOut || err.message).trim().split('\n').pop())) : ok(out.trim())));
 
+// Neue Modelle/Bilder (z. B. nach git pull) muss Godot erst einlesen – sonst fehlen sie beim Start aus dem Projektordner
+// (24.10.: neue Frisuren-GLBs -> figur.gd kompilierte nicht -> kein Charakter). Gemerkt wird der Git-Stand des letzten Imports.
+async function importieren(godot, ordner) {
+  const merker = path.join(ordner, '.godot', 'hvik_import_stand');
+  let stand = '';
+  try { stand = await git(ordner, ['rev-parse', 'HEAD']); } catch { /* kein Git -> immer einlesen */ }
+  let alt = '';
+  try { alt = fs.readFileSync(merker, 'utf8').trim(); } catch { /* noch nie */ }
+  if (stand && alt === stand && fs.existsSync(path.join(ordner, '.godot', 'imported'))) return;
+  laden = { prozent: 70, text: 'Bereite neue Spieldateien vor (Godot liest neue Modelle ein) …' };
+  try {
+    await warte(godot, ['--headless', '--path', ordner, '--import'], ordner, 40 * 60000).catch(() => { /* Godot meldet beim Einlesen gern Warnungen */ });
+    if (stand) { try { fs.writeFileSync(merker, stand); } catch { /* egal */ } }
+  } finally { laden = null; }
+}
+
 function istProjekt(p) {
   try { return fs.readFileSync(path.join(p, 'project.godot'), 'utf8').includes('HviK'); } catch { return false; }
 }
@@ -180,6 +196,7 @@ async function starten(einst, name, ausweis) {
   if (modus(einst) === 'projekt') {
     const godot = godotFinden(einst), ordner = projektFinden(einst);
     if (!godot || !ordner) return { ok: false, message: 'Godot oder HviK-Welt-Ordner fehlt.' };
+    await importieren(godot, ordner);
     kind = spawn(godot, ['--path', ordner, ...extra], { cwd: ordner, detached: true, stdio: 'ignore' });
   } else {
     const exe = path.join(ZIEL, EXE);
@@ -249,10 +266,7 @@ async function lokalVorbereiten(einst) {
         await git(ordner, ['pull', '-q', '--rebase', '--autostash'], 10 * 60000).catch(() => { /* lokale Arbeit geht vor – dann eben mit dem alten Stand */ });
       }
     }
-    if (!fs.existsSync(path.join(ordner, '.godot', 'imported'))) {
-      laden = { prozent: 60, text: 'Bereite das Spiel vor (nur beim ersten Mal, dauert ein paar Minuten) …' };
-      await warte(godot, ['--headless', '--path', ordner, '--import'], ordner, 40 * 60000).catch(() => { /* Godot meldet beim Einlesen gern Warnungen */ });
-    }
+    await importieren(godot, ordner);   // erstes Mal oder neuer Stand
     return { godot, ordner };
   } finally {
     laden = null; fetchZeit = 0;
