@@ -45,6 +45,23 @@ function isInner() {
   return left || (full && right);
 }
 let innerNow = null;
+// Windows + durchsichtiges Fenster ohne Rahmen: Die eingebettete Seite zeichnet sich manchmal nicht (schwarzes/leeres Bild),
+// bis man das Fenster bewegt. Abhilfe: Ansicht kurz um 1 px ändern + neu zeichnen lassen – nach Anzeigen, Wiederherstellen,
+// Fokus, Aufwachen und Laden (höchstens alle 400 ms).
+let anstossZeit = 0;
+function anstossen() {
+  if (!win || win.isDestroyed() || !view) return;
+  const jetzt = Date.now();
+  if (jetzt - anstossZeit < 400) return;
+  anstossZeit = jetzt;
+  try {
+    const b = view.getBounds();
+    view.setBounds({ ...b, height: Math.max(0, b.height - 1) });
+    setTimeout(() => {
+      try { layout(); view.webContents.invalidate(); win.webContents.invalidate(); } catch { /* Fenster weg */ }
+    }, 40);
+  } catch { /* Fenster weg */ }
+}
 function layout() {
   const [w, h] = win.getContentSize();
   if (!NEU) { view.setBounds({ x: 0, y: BAR, width: w, height: Math.max(0, h - BAR) }); return; }
@@ -248,7 +265,7 @@ function createWindow() {
   wc.on('did-finish-load', () => {
     setTimeout(sendBadges, 1500);
     setTimeout(railRefresh, 1200);
-    if (firstLoad) { firstLoad = false; view.setVisible(true); win.webContents.send('ready'); }
+    if (firstLoad) { firstLoad = false; view.setVisible(true); win.webContents.send('ready'); setTimeout(anstossen, 120); }
   });
   wc.on('did-fail-load', (e, code, desc, url, isMain) => {
     if (!isMain || code === -3) return;  // -3 = abgebrochen (z. B. Weiterleitung)
@@ -292,6 +309,10 @@ function createWindow() {
   setInterval(() => { if (win && !win.isDestroyed()) nap(!win.isFocused() && require('./toast').fullscreenNow()); }, 3000);
   win.on('focus', () => nap(false));
   win.on('show', () => nap(false));
+  for (const ev of ['show', 'restore', 'focus']) win.on(ev, () => setTimeout(anstossen, 80));   // leeres Bild verhindern
+  wc.on('did-finish-load', () => setTimeout(anstossen, 120));
+  const { powerMonitor } = require('electron');
+  for (const ev of ['resume', 'unlock-screen']) powerMonitor.on(ev, () => setTimeout(anstossen, 500));
   wc.loadURL(startUrl());
   shortcuts(wc);
   shortcuts(win.webContents);
