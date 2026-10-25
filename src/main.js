@@ -117,7 +117,8 @@ function createWindow() {
     return b.x + 100 > a.x && b.x < a.x + a.width - 100 && b.y + 40 > a.y && b.y < a.y + a.height - 40;
   });
   if (!visible) { delete b.x; delete b.y; }
-  NEU = loadSettings().design === 'neu';
+  NEU = true;  // nur noch das neue Design (25.10.) - alte Einstellung 'alt' wird beim Start umgeschrieben
+  if (loadSettings().design !== 'neu') saveSettings({ ...loadSettings(), design: 'neu' });
   const common = { x: b.x, y: b.y, title: 'HviK', show: false, icon: path.join(__dirname, 'icon.ico'),
                    webPreferences: { preload: path.join(__dirname, 'shell-preload.js') } };
   win = NEU
@@ -691,7 +692,6 @@ ipcMain.handle('app-settings', async (e, patch) => {
     for (const k of ['autostart', 'tray', 'discord', 'spielzeit', 'overlay']) if (k in patch) allowed[k] = !!patch[k];
     if (['oben-rechts', 'oben-links', 'mitte-rechts', 'unten-links', 'unten-rechts'].includes(patch.overlayPos)) allowed.overlayPos = patch.overlayPos;
     if (['auto', 'immer', 'aus'].includes(patch.toastMode)) allowed.toastMode = patch.toastMode;
-    if (['alt', 'neu'].includes(patch.design)) allowed.design = patch.design;
     if (PALETTES.includes(patch.palette)) allowed.palette = patch.palette;
     if (patch.notify && typeof patch.notify === 'object')
       allowed.notify = { ...background.settings().notify, ...Object.fromEntries(Object.entries(patch.notify).map(([k, v]) => [k, !!v])) };
@@ -700,8 +700,6 @@ ipcMain.handle('app-settings', async (e, patch) => {
     background.refreshPresence();
     applyDesign();
     if ('overlay' in allowed || allowed.overlayPos || allowed.palette) background.overlay.refresh();
-    // Alt <-> Neu braucht ein anderes Fenster (mit/ohne Rahmen) -> App kurz neu starten
-    if (allowed.design && (allowed.design === 'neu') !== NEU) setTimeout(() => { app.relaunch(); app.exit(0); }, 600);
   }
   return { ...background.settings(), cfRoot: loadSettings().cfRoot || null, apRoot: archipelago.ROOT, designActive: NEU ? 'neu' : 'alt',
            appDir: path.dirname(process.execPath), canMoveApp: app.isPackaged };

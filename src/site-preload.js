@@ -19,6 +19,8 @@ ipcRenderer.on('design', (e, d) => applyDesign(d));
 // Farbwelt des neuen Designs (data-palette am <html>, design-neu.css färbt danach)
 function applyPalette(p) {
   const set = () => { document.documentElement.dataset.palette = p || 'ozean'; };
+  // Cookie: die Seite bringt die Farbe dann schon beim Laden mit (kein Farbsprung beim Neuladen)
+  try { document.cookie = 'hvik_palette=' + (p || 'ozean') + '; path=/; max-age=31536000; samesite=lax'; } catch (e) { /* egal */ }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', set, { once: true }); else set();
   if (document.documentElement) set();
 }
