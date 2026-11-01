@@ -50,31 +50,68 @@ async function statusVersion() {
            groesse: n ? mb(n.groesse) : '', ordner: ZIEL, fehler, projekt_da: projektDa(einstAktuell), modus_gewaehlt: !!einstAktuell.spielModus };
 }
 
+const STILL_MS = Number(process.env.HVIK_STILL_MS) || 20000;   // so lange ohne neue Daten = Verbindung hängt -> abbrechen und weiterladen
+const VERSUCHE = 40;
+
+// Ein Abschnitt ab Byte `ab` an die Datei hängen; bricht ab, wenn STILL_MS nichts kommt. Gibt die neue Größe zurück.
+async function stueckLaden(n, datei, ab, gesamt) {
+  const ctrl = new AbortController();
+  let wache = setTimeout(() => ctrl.abort(), STILL_MS);
+  const nochmal = () => { clearTimeout(wache); wache = setTimeout(() => ctrl.abort(), STILL_MS); };
+  let out = null;
+  let da = ab;
+  try {
+    const kopf = { 'User-Agent': 'HviK-App' };
+    if (ab > 0) kopf.Range = `bytes=${ab}-`;
+    const r = await fetch(n.url, { headers: kopf, signal: ctrl.signal });
+    if (!r.ok || !r.body) throw new Error(`Download fehlgeschlagen (${r.status})`);
+    if (ab > 0 && r.status !== 206) da = 0;   // Server kann nicht fortsetzen -> von vorn
+    out = fs.createWriteStream(datei, { flags: da > 0 ? 'a' : 'w' });
+    const leser = r.body.getReader();
+    for (;;) {
+      const { done, value } = await leser.read();
+      if (done) break;
+      nochmal();
+      da += value.length;
+      if (!out.write(Buffer.from(value))) await new Promise(ok => out.once('drain', ok));
+      laden = { prozent: Math.min(95, (da / gesamt) * 95), text: `${mb(da)} von ${mb(gesamt)}` };
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError' && !/terminated|ECONNRESET|socket|network/i.test(err.message)) throw err;
+  } finally {
+    clearTimeout(wache);
+    if (out) await new Promise(ok => out.end(ok));
+  }
+  return fs.existsSync(datei) ? fs.statSync(datei).size : 0;
+}
+
 async function herunterladen() {
   const n = await neuste();
   laden = { prozent: 0, text: 'Lade …' };
   try {
     fs.mkdirSync(ZIEL, { recursive: true });
-    const r = await fetch(n.url, { headers: { 'User-Agent': 'HviK-App' } });
-    if (!r.ok || !r.body) throw new Error(`Download fehlgeschlagen (${r.status})`);
-    const gesamt = Number(r.headers.get('content-length')) || n.groesse || 1;
     const datei = path.join(ZIEL, 'download.zip');
-    const out = fs.createWriteStream(datei);
+    const merker = path.join(ZIEL, 'download.txt');   // welche Version download.zip ist (sonst nicht fortsetzen)
     let da = 0;
-    const leser = r.body.getReader();
-    for (;;) {
-      const { done, value } = await leser.read();
-      if (done) break;
-      da += value.length;
-      if (!out.write(Buffer.from(value))) await new Promise(ok => out.once('drain', ok));
-      laden = { prozent: Math.min(95, (da / gesamt) * 95), text: `${mb(da)} von ${mb(gesamt)}` };
+    try { if (fs.readFileSync(merker, 'utf8').trim() === n.version) da = fs.statSync(datei).size; } catch { da = 0; }
+    if (da > n.groesse) da = 0;
+    fs.writeFileSync(merker, n.version);
+    const gesamt = n.groesse || 1;
+    for (let v = 1; da < gesamt; v++) {
+      if (v > VERSUCHE) throw new Error('Download bricht immer wieder ab – bitte später nochmal versuchen (es geht dann an derselben Stelle weiter)');
+      if (v > 1) {
+        laden = { prozent: Math.min(95, (da / gesamt) * 95), text: `${mb(da)} von ${mb(gesamt)} · Verbindung neu (${v}) …` };
+        await new Promise(ok => setTimeout(ok, Math.min(10000, 1000 * v)));
+      }
+      da = await stueckLaden(n, datei, da, gesamt);
     }
-    await new Promise((ok, fehler) => out.end(err => (err ? fehler(err) : ok())));
+    if (da !== gesamt) { fs.rmSync(datei, { force: true }); throw new Error('Download ist kaputt angekommen – bitte nochmal drücken'); }
     laden = { prozent: 96, text: 'Entpacke …' };
     await new Promise(ok => setImmediate(ok));
     // alte Version weg (Spielstände liegen in %APPDATA%, nicht hier)
+    const zip = new AdmZip(datei);   // erst öffnen (kaputte Datei = Fehler), dann die alte Version löschen
     for (const f of fs.readdirSync(ZIEL)) if (f !== 'download.zip') fs.rmSync(path.join(ZIEL, f), { recursive: true, force: true });
-    new AdmZip(datei).extractAllTo(ZIEL, true);
+    zip.extractAllTo(ZIEL, true);
     fs.rmSync(datei, { force: true });
     fs.writeFileSync(path.join(ZIEL, 'version.txt'), n.version);
     return { ok: true };
